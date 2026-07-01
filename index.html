@@ -351,6 +351,9 @@
     .msg.debate-gov .debate-meta-label { color: var(--gov-color); }
     .msg.debate-opp .debate-meta-label { color: var(--opp-color); }
 
+    .msg.debate-gov.hide-text .msg-body { color: var(--gov-bg); }
+    .msg.debate-opp.hide-text .msg-body { color: var(--opp-bg); }
+
     .assign-table {
       width: 100%;
       border-collapse: collapse;
@@ -1135,9 +1138,22 @@
           <select id="debateUnitSelect"></select>
         </div>
       </div>
-      <div>
-        <label for="debateSetSelect">ディベートセット</label>
-        <select id="debateSetSelect"></select>
+      <div class="grid-2">
+        <div>
+          <label for="debateCefr">CEFRレベル (A1 易 → B2 難)</label>
+          <select id="debateCefr">
+            <option>A1</option>
+            <option selected>A2</option>
+            <option>B1</option>
+            <option>B2</option>
+            <option>No Limit</option>
+          </select>
+          <div class="small" style="margin-top:.35rem;">※ AIスピーチの英語難易度（システムプロンプトに反映）</div>
+        </div>
+        <div>
+          <label for="debateSetSelect">ディベートセット</label>
+          <select id="debateSetSelect"></select>
+        </div>
       </div>
       <div>
         <label for="debateMotionDisplay">議題（Motion）</label>
@@ -1508,7 +1524,15 @@
       const trim = (text || '').trim();
       if (!trim.startsWith('{') && !trim.startsWith('[')) {
         step(5, `JSONでない応答 (HTML等)`);
-        throw new Error('GASがHTMLを返しました。URL・認証設定・デプロイを確認してください。(' + (trim.slice(0, 80).replace(/\s+/g, ' ') || res.status) + ')');
+        let hint = 'GASがHTMLを返しました。URL・デプロイ設定を確認してください。';
+        if (/accounts\.google\.com|ServiceLogin|signin/i.test(trim)) {
+          hint = 'GAS認証エラー: デプロイの「アクセスできるユーザー」を「全員」に設定してください。';
+        } else if (/ウェブ ワープロ|word processor|docs\.google/i.test(trim)) {
+          hint = 'GAS接続エラー: デプロイURLが正しいか、OpenAI API応答待ちでタイムアウトしていないか確認してください。';
+        } else if (res.status >= 500 || res.status === 0) {
+          hint = 'GASサーバーエラー（タイムアウトの可能性）。しばらく待って再試行してください。';
+        }
+        throw new Error(hint + ' (' + (trim.slice(0, 80).replace(/\s+/g, ' ') || res.status) + ')');
       }
       step(5, '応答はJSON形式');
 
@@ -1896,6 +1920,7 @@
     async function confirmAppMode(mode) {
       appMode = mode;
       saveAppModeChoice_(mode);
+      syncCefrSelectors(mode === 'debate');
       hideModePicker();
       if (mode === 'debate') {
         restartDebateSameSelection();
@@ -2285,7 +2310,18 @@
       const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
       currentUtterance = u; // ★ GC対策
       speakingNow = true; updateUI();
-      const cleanup = () => { currentUtterance = null; b.play.classList.remove('is-speaking'); b.play.setAttribute('aria-pressed', 'false'); b.play.disabled = false; b.toggle.disabled = false; speakingNow = false; updateUI(); endTTS(); };
+      const cleanup = () => {
+        currentUtterance = null;
+        b.div.classList.remove('hide-text');
+        b.toggle.textContent = '非表示';
+        b.play.classList.remove('is-speaking');
+        b.play.setAttribute('aria-pressed', 'false');
+        b.play.disabled = false;
+        b.toggle.disabled = false;
+        speakingNow = false;
+        updateUI();
+        endTTS();
+      };
       u.onend = cleanup; u.onerror = cleanup;
       window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
     }
@@ -2629,6 +2665,43 @@
     function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = getEffectiveUserRole(); const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
     async function tryShowClipboard(txt) { if (!txt) return; await new Promise(r => setTimeout(r, 500)); const ok = window.confirm('このやりとりとフィードバックの文字情報をコピー＆ペーストしますか？'); if (ok) { try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); } else { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); } statusSubmit('会話＋フィードバックをクリップボードにコピーしました。', false); } catch (_) { } } }
 
+    function syncCefrSelectors(fromDebate) {
+      const conv = el('cefr');
+      const deb = el('debateCefr');
+      if (!conv || !deb) return;
+      if (fromDebate) conv.value = deb.value;
+      else deb.value = conv.value;
+    }
+
+    function getDebateCefr() {
+      const deb = el('debateCefr');
+      return (deb && deb.value) ? deb.value : (cefr && cefr.value ? cefr.value : 'A2');
+    }
+
+    function slimDebateRowForApi(row) {
+      if (!row) return {};
+      return {
+        serial: row.serial, title: row.title, motion: row.motion, sys: row.sys,
+        pmSec: row.pmSec, loSec: row.loSec, mgSec: row.mgSec, moSec: row.moSec,
+        orSec: row.orSec, grSec: row.grSec, prep1Sec: row.prep1Sec, prep2Sec: row.prep2Sec,
+        aiRebuttalStrength: row.aiRebuttalStrength, aiLogicTightness: row.aiLogicTightness,
+        aiTtsRate: row.aiTtsRate, judgePrompt: row.judgePrompt, speechPrompts: row.speechPrompts
+      };
+    }
+
+    function slimDebateMessagesForApi(messages) {
+      return (messages || []).map(m => ({
+        role: m.role,
+        content: m.content,
+        meta: m.meta ? {
+          speechId: m.meta.speechId,
+          side: m.meta.side,
+          assigneeType: m.meta.assigneeType,
+          speakerName: m.meta.speakerName
+        } : undefined
+      }));
+    }
+
     /* ========= ディベートモード ========= */
     function getDebateFlowStep(idx) { return DEBATE_FLOW[idx] || null; }
 
@@ -2710,6 +2783,7 @@
       if (inProgress && !window.confirm('進行中のセッションがあります。モードを切り替えるとリセットされます。よろしいですか？')) return;
       appMode = mode;
       saveAppModeChoice_(mode);
+      syncCefrSelectors(mode === 'debate');
       const modeSelect = el('modeSelectCard');
       if (modeSelect) modeSelect.classList.add('hidden');
       const tabs = el('modeTabsArea');
@@ -2833,6 +2907,7 @@
       const div = document.createElement('div');
       const sideClass = meta.side === 'gov' ? 'debate-gov' : 'debate-opp';
       div.className = 'msg ' + sideClass;
+      if (meta.assigneeType === 'ai') div.classList.add('hide-text');
       const label = document.createElement('span');
       label.className = 'debate-meta-label';
       label.textContent = debateUiLabel(meta);
@@ -2854,6 +2929,11 @@
       }
       el('debateChat').appendChild(div);
       el('debateChat').scrollTop = el('debateChat').scrollHeight;
+      return div;
+    }
+
+    function revealDebateBubbleText(bubbleDiv) {
+      if (bubbleDiv) bubbleDiv.classList.remove('hide-text');
     }
 
     function addDebateSystemMsg(text) {
@@ -2955,6 +3035,8 @@
       el('debateBookSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('debateUnitSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('debateSetSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
+      const debateCefrEl = el('debateCefr');
+      if (debateCefrEl) debateCefrEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('btnFillMyName').disabled = busy || debateSelectorsFrozen || running || authLocked;
       const step = getDebateFlowStep(debateStepIndex);
       const assign = getCurrentDebateAssignment();
@@ -2978,7 +3060,7 @@
       debateStepIndex = 0;
       debateSelectorsFrozen = true;
       renderAssignmentTable();
-      addDebateSystemMsg(`Motion: ${debateRow.motion}\nディベートを開始します。`);
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nディベートを開始します。`);
       debatePhase = 'running';
       updateDebateUI();
       await advanceDebateStep();
@@ -3026,10 +3108,11 @@
         setBusy(true, 'AIスピーチ生成中…');
         try {
           const text = await callGAS('generate_debate_speech', {
-            row: debateRow,
+            row: slimDebateRowForApi(debateRow),
             speechId: step.id,
             side: step.side,
-            messages: debateMessages
+            cefr: getDebateCefr(),
+            messages: slimDebateMessagesForApi(debateMessages)
           });
           const meta = {
             speechId: step.id,
@@ -3039,8 +3122,8 @@
             displayLabel: step.label
           };
           debateMessages.push({ role: 'assistant', content: text, meta: meta });
-          addDebateBubble(text, meta);
-          await speakGuardedDebate(text);
+          const bubble = addDebateBubble(text, meta);
+          await speakGuardedDebate(text, bubble);
         } catch (err) {
           statusSubmit(err.message, true);
         } finally {
@@ -3056,8 +3139,11 @@
       }
     }
 
-    async function speakGuardedDebate(text) {
-      if (!('speechSynthesis' in window) || !voiceReady || !text) return;
+    async function speakGuardedDebate(text, bubbleDiv) {
+      if (!('speechSynthesis' in window) || !voiceReady || !text) {
+        revealDebateBubbleText(bubbleDiv);
+        return;
+      }
       await beginTTS(true);
       scrollToBottomIfEnabled();
       return new Promise(resolve => {
@@ -3074,6 +3160,7 @@
         const done = () => {
           currentUtterance = null;
           speakingNow = false;
+          revealDebateBubbleText(bubbleDiv);
           updateUI();
           updateDebateUI();
           endTTS();
@@ -3121,7 +3208,10 @@
       updateDebateUI();
       setBusy(true, 'ジャッジ判定中…');
       try {
-        debateVerdict = await callGAS('judge_debate', { row: debateRow, messages: debateMessages });
+        debateVerdict = await callGAS('judge_debate', {
+          row: slimDebateRowForApi(debateRow),
+          messages: slimDebateMessagesForApi(debateMessages)
+        });
         const w = debateVerdict.winnerSide;
         const wJa = w === 'gov' ? '肯定派の勝利' : (w === 'opp' ? '否定派の勝利' : '引き分け');
         addDebateSystemMsg(`🏆 判定: ${wJa}\n\n${debateVerdict.verdictJa || ''}`);
@@ -3148,8 +3238,9 @@
           gIdentity: gIdentity,
           bookName: debateBook.name,
           unitName: debateUnit,
-          row: debateRow,
-          messages: debateMessages,
+          row: slimDebateRowForApi(debateRow),
+          cefr: getDebateCefr(),
+          messages: slimDebateMessagesForApi(debateMessages),
           assignments: debateAssignments,
           winnerSide: debateVerdict.winnerSide,
           verdictJa: debateVerdict.verdictJa

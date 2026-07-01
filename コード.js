@@ -1069,12 +1069,16 @@ function chat_(messages, opts) {
     method: 'post',
     headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     payload: JSON.stringify(body),
-    muteHttpExceptions: true
+    muteHttpExceptions: true,
+    timeout: 55000
   });
 
   const code = res.getResponseCode();
   const text = res.getContentText();
-  if (code < 200 || code >= 300) throw new Error(`OpenAI error ${code}: ${text}`);
+  if (code === 408 || code === 504) {
+    throw new Error('OpenAI API がタイムアウトしました。しばらく待って再試行してください。');
+  }
+  if (code < 200 || code >= 300) throw new Error(`OpenAI error ${code}: ${text.slice(0, 200)}`);
 
   const json = JSON.parse(text || '{}');
   const msg = ((json.choices || [])[0] || {}).message || {};
@@ -1719,7 +1723,21 @@ function aiStrengthToText_(value, kind) {
   return map[level];
 }
 
-function buildDebateSpeechPrompt_(row, speechId, side) {
+function buildDebateCefrHint_(cefr) {
+  const level = _s(cefr) || 'A2';
+  if (level === 'No Limit') {
+    return 'Use natural, advanced English suitable for competitive parliamentary debate.';
+  }
+  const map = {
+    A1: 'Use very simple words and short sentences (CEFR A1). Avoid idioms and rare vocabulary.',
+    A2: 'Use simple, clear English (CEFR A2). Prefer common words and straightforward sentences.',
+    B1: 'Use clear English (CEFR B1). Moderate vocabulary; briefly explain any difficult term.',
+    B2: 'Use fluent English (CEFR B2). More sophisticated vocabulary while staying clear.'
+  };
+  return map[level] || `Use English appropriate for CEFR ${level} learners following this debate.`;
+}
+
+function buildDebateSpeechPrompt_(row, speechId, side, cefr) {
   const step = getDebateFlowStep_(speechId);
   if (!step || step.type === 'prep') throw new Error('Invalid speech: ' + speechId);
 
@@ -1736,6 +1754,7 @@ function buildDebateSpeechPrompt_(row, speechId, side) {
 
   lines.push(`Rebuttal intensity: ${aiStrengthToText_(row && row.aiRebuttalStrength, 'rebuttal')}`);
   lines.push(`Logical rigor: ${aiStrengthToText_(row && row.aiLogicTightness, 'logic')}`);
+  lines.push(`Language level: ${buildDebateCefrHint_(cefr)}`);
 
   const typeRules = {
     constructive: speechId === 'PM'
@@ -1791,13 +1810,14 @@ function generateDebateSpeech_(body) {
   const row = body.row || {};
   const speechId = _s(body.speechId);
   const side = _s(body.side) || 'gov';
+  const cefr = _s(body.cefr) || 'A2';
   const messages = Array.isArray(body.messages) ? body.messages : [];
 
-  const sys = buildDebateSpeechPrompt_(row, speechId, side);
+  const sys = buildDebateSpeechPrompt_(row, speechId, side, cefr);
   const history = debateMessagesToHistoryText_(messages, false);
   const serverMsgs = [{ role: 'system', content: sys }];
   if (history) {
-    serverMsgs.push({ role: 'user', content: 'Previous speeches in this debate:\n\n' + history });
+    serverMsgs.push({ role: 'user', content: 'Previous speeches in this debate:\n\n' + history.slice(-12000) });
   }
   serverMsgs.push({
     role: 'user',
@@ -1806,9 +1826,17 @@ function generateDebateSpeech_(body) {
 
   const secKey = (getDebateFlowStep_(speechId) || {}).secKey;
   const sec = secKey ? (row[secKey] || 120) : 120;
-  const maxTokens = Math.min(1200, Math.max(400, Math.round(sec / 60 * 200)));
+  const maxTokens = Math.min(800, Math.max(350, Math.round(sec / 60 * 140)));
 
-  return chat_(serverMsgs, { keepAll: true, maxTokens: maxTokens }) || '';
+  try {
+    return chat_(serverMsgs, { keepAll: true, maxTokens: maxTokens }) || '';
+  } catch (err) {
+    const msg = String(err && err.message ? err.message : err);
+    if (/timeout|timed out|タイムアウト/i.test(msg)) {
+      throw new Error('AIスピーチ生成がタイムアウトしました。CEFRを下げるか、しばらく待って再試行してください。');
+    }
+    throw err;
+  }
 }
 
 function judgeDebate_(body) {
@@ -1889,6 +1917,7 @@ function endAndSubmitDebate_(payload) {
     motion: motion,
     studentId4: id4,
     studentName: student,
+    cefr: _s(payload.cefr),
     assignments: payload.assignments || [],
     winnerSide: winnerSide,
     verdictJa: verdictJa,
@@ -1912,6 +1941,7 @@ function submitDebate_(body) {
     row: row,
     studentId4: _s(gIdentity.id4),
     studentName: _s(gIdentity.name),
+    cefr: _s(body.cefr),
     assignments: body.assignments || [],
     winnerSide: _s(body.winnerSide),
     verdictJa: _s(body.verdictJa),
