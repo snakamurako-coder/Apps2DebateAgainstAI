@@ -283,6 +283,34 @@
       box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
     }
 
+    .mode-pick-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-4);
+    }
+
+    .mode-pick-btn {
+      min-height: 120px;
+      font-size: 1.15rem;
+      line-height: 1.45;
+      padding: var(--spacing-4);
+      white-space: normal;
+    }
+
+    .mode-pick-btn .sub {
+      display: block;
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      opacity: 0.9;
+      margin-top: 0.35rem;
+    }
+
+    @media (max-width: 768px) {
+      .mode-pick-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     /* ディベート */
     :root {
       --gov-color: #dc3545;
@@ -990,6 +1018,23 @@
       <button type="button" class="mode-tab active" id="modeTabConv" role="tab">AI英会話</button>
       <button type="button" class="mode-tab" id="modeTabDebate" role="tab">パーラメンタリーディベート</button>
     </div>
+
+    <!-- ログイン直後のモード選択 -->
+    <div class="card hidden" id="modeSelectCard">
+      <h2>モードを選んでください</h2>
+      <p class="small">ログインが完了しました。今日取り組むモードを選んでから設定を進めてください。</p>
+      <div class="mode-pick-grid">
+        <button type="button" id="btnPickConv" class="btn-primary mode-pick-btn">
+          AI英会話
+          <span class="sub">CEFRレベルに合わせた対話練習・フィードバック</span>
+        </button>
+        <button type="button" id="btnPickDebate" class="btn-primary mode-pick-btn" style="background:var(--opp-color);border-color:var(--opp-color);">
+          パーラメンタリーディベート
+          <span class="sub">BP形式の英語ディベート・ジャッジ判定</span>
+        </button>
+      </div>
+      <p class="small" style="margin-top:.75rem;">※ 上部タブからいつでもモードを切り替えられます。</p>
+    </div>
     <!-- バグ特定用：診断パネル（?debug=1 で表示） -->
     <div id="diagnosePanel" class="card hidden" style="background:var(--bg-secondary);font-family:monospace;font-size:0.75rem;">
       <h3>🔧 GAS接続診断ログ</h3>
@@ -1406,6 +1451,8 @@
     const AUTH_FAIL_KEY = 'auth_fail_count';
     const AUTH_LOCK_EMAIL_KEY = 'auth_lock_email';
     const AUTH_SESSION_KEY = 'auth_session';
+    const APP_MODE_CONFIRMED_KEY = 'app_mode_confirmed';
+    const APP_MODE_KEY = 'app_mode';
     const MAX_AUTH_FAIL = 4;
     const LOCK_MS = 24 * 60 * 60 * 1000;
 
@@ -1796,19 +1843,87 @@
       showAuthTabs('first');
     }
 
+    function hideLearningPanels_() {
+      document.querySelectorAll('.conv-mode-panel, .debate-mode-panel, #status, #afterSubmitLink').forEach(c => {
+        c.classList.add('hidden');
+      });
+    }
+
+    function showModePicker() {
+      const card = el('modeSelectCard');
+      if (card) card.classList.remove('hidden');
+      hideLearningPanels_();
+      const tabs = el('modeTabsArea');
+      if (tabs) tabs.classList.add('hidden');
+    }
+
+    function hideModePicker() {
+      const card = el('modeSelectCard');
+      if (card) card.classList.add('hidden');
+      const tabs = el('modeTabsArea');
+      if (tabs) tabs.classList.remove('hidden');
+      applyAppModeVisibility();
+      const statusEl = el('status');
+      if (statusEl) statusEl.classList.remove('hidden');
+    }
+
+    function saveAppModeChoice_(mode) {
+      try {
+        sessionStorage.setItem(APP_MODE_CONFIRMED_KEY, '1');
+        sessionStorage.setItem(APP_MODE_KEY, mode);
+      } catch (_) {}
+    }
+
+    function clearAppModeChoice_() {
+      try {
+        sessionStorage.removeItem(APP_MODE_CONFIRMED_KEY);
+        sessionStorage.removeItem(APP_MODE_KEY);
+      } catch (_) {}
+    }
+
+    function isAppModeConfirmed_() {
+      try { return sessionStorage.getItem(APP_MODE_CONFIRMED_KEY) === '1'; } catch (_) { return false; }
+    }
+
+    function loadSavedAppMode_() {
+      try {
+        const saved = sessionStorage.getItem(APP_MODE_KEY);
+        if (saved === 'debate' || saved === 'conversation') return saved;
+      } catch (_) {}
+      return 'conversation';
+    }
+
+    async function confirmAppMode(mode) {
+      appMode = mode;
+      saveAppModeChoice_(mode);
+      hideModePicker();
+      if (mode === 'debate') {
+        restartDebateSameSelection();
+        if (isLoggedIn() && debateBooks.length === 0 && !configNotSet()) {
+          await loadDebateBooks(false);
+        }
+      } else {
+        restartSameSelection();
+      }
+      updateUI();
+      updateDebateUI();
+      updatePhaseButton();
+    }
+
     function showLoggedInUI() {
       hideAllAuthScreens();
       identPanel.classList.add('hidden');
       const btnLogoutToolbar = el('btnLogoutToolbar');
       if (btnLogoutToolbar) btnLogoutToolbar.classList.remove('hidden');
-      const modeTabs = el('modeTabsArea');
-      if (modeTabs) modeTabs.classList.remove('hidden');
-      document.querySelectorAll('.card.hidden, #status.hidden').forEach(c => {
+      document.querySelectorAll('.card.hidden').forEach(c => {
         if (c.id !== 'identPanel' && c.id !== 'diagnosePanel') c.classList.remove('hidden');
       });
-      applyAppModeVisibility();
-      const statusEl = el('status');
-      if (statusEl) statusEl.classList.remove('hidden');
+      if (isAppModeConfirmed_()) {
+        appMode = loadSavedAppMode_();
+        hideModePicker();
+      } else {
+        showModePicker();
+      }
     }
 
     function handleAuthError(err, msgEl, email) {
@@ -1926,6 +2041,7 @@
       }, async () => {
         try {
           await callGAS('auth_login', { email, pin });
+          clearAppModeChoice_();
           await completeAuthSuccess(email.toLowerCase());
         } catch (err) {
           handleAuthError(err, authLoginMsg, email);
@@ -1951,6 +2067,7 @@
           const res = await callGAS('auth_verify_initial', { email, initialPassword });
           const normalizedEmail = (res && res.email) || email.toLowerCase();
           await callGAS('auth_register_pin', { email: normalizedEmail, pin });
+          clearAppModeChoice_();
           await completeAuthSuccess(normalizedEmail);
         } catch (err) {
           handleAuthError(err, authFirstLoginMsg, email);
@@ -1960,6 +2077,7 @@
 
     function logout() {
       clearAuthSession();
+      clearAppModeChoice_();
       gIdentity = { status: 'guest', email: '', name: '', id4: '', selfCheck: '' };
       acctEmail.textContent = '—';
       wlName.textContent = '—';
@@ -1971,6 +2089,8 @@
       if (btnLogoutToolbar) btnLogoutToolbar.classList.add('hidden');
       const modeTabs = el('modeTabsArea');
       if (modeTabs) modeTabs.classList.add('hidden');
+      const modeSelect = el('modeSelectCard');
+      if (modeSelect) modeSelect.classList.add('hidden');
       appMode = 'conversation';
       applyAppModeVisibility();
       if (isClientLocked()) {
@@ -2589,6 +2709,11 @@
         (appMode === 'debate' && debatePhase !== 'setup' && debatePhase !== 'done');
       if (inProgress && !window.confirm('進行中のセッションがあります。モードを切り替えるとリセットされます。よろしいですか？')) return;
       appMode = mode;
+      saveAppModeChoice_(mode);
+      const modeSelect = el('modeSelectCard');
+      if (modeSelect) modeSelect.classList.add('hidden');
+      const tabs = el('modeTabsArea');
+      if (tabs) tabs.classList.remove('hidden');
       const footer = el('afterSubmitLink');
       if (footer && mode === 'debate') footer.classList.add('hidden');
       if (mode === 'debate') {
@@ -3147,6 +3272,8 @@
       btnRefresh.addEventListener('click', refreshPageData);
       el('modeTabConv').addEventListener('click', () => switchAppMode('conversation'));
       el('modeTabDebate').addEventListener('click', () => switchAppMode('debate'));
+      el('btnPickConv').addEventListener('click', () => confirmAppMode('conversation'));
+      el('btnPickDebate').addEventListener('click', () => confirmAppMode('debate'));
       el('debateBookSelect').addEventListener('change', onDebateBookChange);
       el('debateUnitSelect').addEventListener('change', onDebateUnitChange);
       el('debateSetSelect').addEventListener('change', onDebateSetChange);

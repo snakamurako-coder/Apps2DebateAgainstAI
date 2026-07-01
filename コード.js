@@ -407,7 +407,7 @@ function migrateLegacyWhitelistIfNeeded_(usersSs) {
       if (logValues.length > 1) {
         const rows = logValues.slice(1);
         if (rows.length) {
-          destLog.getRange(2, 1, 1 + rows.length, rows[0].length).setValues(rows);
+          destLog.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
         }
       }
     }
@@ -444,7 +444,7 @@ function ensureUsersCreatorSampleRow_(sh) {
     return false;
   }
   if (sh.getLastRow() <= 1) {
-    sh.getRange(2, 1, 2, USERS_HEADER.length).setValues([sampleRow]);
+    sh.getRange(2, 1, 1, USERS_HEADER.length).setValues([sampleRow]);
   } else {
     sh.appendRow(sampleRow);
   }
