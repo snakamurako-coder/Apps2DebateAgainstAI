@@ -975,6 +975,26 @@ function chat_(messages, opts) {
 /**
  * 仕様：役割B もしくは Bの最初のセリフが参照できない場合は
  *       「AI=A固定／ユーザー=B固定」とする。
+ */
+function isRoleLockedToA_(row) {
+  if (!row) return true;
+  return !_s(row.roleB) || !_s(row.roleBFirst);
+}
+
+/**
+ * フロントからの略称（'A'/'B'）や実際の役割名をシート上の roleA/roleB に正規化する。
+ */
+function resolveLearnerRole_(row, requestedUserRoleName) {
+  const roleA = _s(row && row.roleA) || 'A';
+  const roleB = _s(row && row.roleB) || 'B';
+  const req = _s(requestedUserRoleName) || roleA;
+
+  if (req === 'A' || req === roleA) return { userIsA: true, userRoleName: roleA };
+  if (req === 'B' || req === roleB) return { userIsA: false, userRoleName: roleB };
+  return { userIsA: req === roleA, userRoleName: req };
+}
+
+/**
  * 返値：
  *  { lockToA, userRoleName, aiRoleName, studentRoleName, aiFirstLine }
  */
@@ -984,26 +1004,26 @@ function getEffectiveRolePack_(row, requestedUserRoleName) {
   const aFirst = _s(row && row.roleAFirst) || '';
   const bFirst = _s(row && row.roleBFirst) || '';
 
-  const lockToA = (!row || !_s(row.roleB) || !_s(row.roleBFirst)); // 参照不可＝空扱い
+  const lockToA = isRoleLockedToA_(row);
 
   if (lockToA) {
     return {
       lockToA: true,
-      userRoleName: roleB,         // ユーザー=B固定
-      aiRoleName: roleA,           // AI=A固定
-      studentRoleName: roleB,      // 学習者はB
-      aiFirstLine: aFirst          // AI(=A)の最初の台詞
+      userRoleName: roleB,
+      aiRoleName: roleA,
+      studentRoleName: roleB,
+      aiFirstLine: aFirst
     };
   }
 
-  // 通常: フロントの選択を尊重（既定A/B）
-  const req = _s(requestedUserRoleName) || roleA;
-  const userIsA = (req === roleA);
+  const resolved = resolveLearnerRole_(row, requestedUserRoleName);
+  const userIsA = resolved.userIsA;
+  const learnerRole = resolved.userRoleName;
   return {
     lockToA: false,
-    userRoleName: req,
+    userRoleName: learnerRole,
     aiRoleName: userIsA ? roleB : roleA,
-    studentRoleName: userIsA ? roleA : roleB,
+    studentRoleName: learnerRole,
     aiFirstLine: userIsA ? bFirst : aFirst
   };
 }
@@ -1039,22 +1059,21 @@ function startSession(payload) {
   const first = chat_(messages, { maxTokens: 320, keepPairs: 4 });
   if (first) messages.push({ role: 'assistant', content: first });
   const pack = getEffectiveRolePack_(payload.row, payload.userRoleName);
+  const roleA = _s(payload.row && payload.row.roleA) || 'A';
+  const learnerFirstLine = pack.lockToA
+    ? ''
+    : (pack.studentRoleName === roleA ? _s(payload.row.roleAFirst) : _s(payload.row.roleBFirst)) || '';
   return {
     messages,
-    learnerFirstLine: (pack.userRoleName === (_s(payload.row.roleA) || 'A') ? _s(payload.row.roleAFirst) : _s(payload.row.roleBFirst)) || ''
+    learnerFirstLine: learnerFirstLine
   };
 }
 
 /*** ===================== フィードバック生成 ===================== ***/
 function formatTranscript_(messages, userRoleName, row) {
-  const uName = _s(userRoleName) || 'Learner';
-  const roleA = _s(row && row.roleA);
-  const roleB = _s(row && row.roleB);
-  let aiName = 'Assistant';
-  if (roleA && roleB) {
-    if (_s(userRoleName) === roleA) aiName = roleB;
-    else if (_s(userRoleName) === roleB) aiName = roleA;
-  }
+  const pack = getEffectiveRolePack_(row, userRoleName);
+  const uName = pack.userRoleName || 'Learner';
+  const aiName = pack.aiRoleName || 'Assistant';
   const stripLeading = s => String(s || '').replace(/^(?:AI|User)(?:\([^)]*\))?:\s*/i, '');
   const lines = [];
   if (!Array.isArray(messages)) messages = [];
@@ -1345,11 +1364,12 @@ function getFeedback(messages, cefr, row, userRoleName, extraMeta) {
  * 返り値は { fileName: '...' }
  */
 function submitTask(gIdentity, bookName, unitName, row, messages, returnedFB, cefrOpt, userRoleNameOpt) {
+  const pack = getEffectiveRolePack_(row || {}, userRoleNameOpt);
   const payload = {
     spreadsheetName: _s(bookName),
     unitName: _s(unitName),
     row: row || {},
-    userRoleName: _s(userRoleNameOpt || ''),
+    userRoleName: pack.userRoleName,
     cefr: _s(cefrOpt || ''),
     studentId4: _s(gIdentity && gIdentity.id4),
     studentName: _s(gIdentity && gIdentity.name),

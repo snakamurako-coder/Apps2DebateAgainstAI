@@ -1921,7 +1921,7 @@
 
     /* ========= TTS：速度コントロール維持 ========= */
     function populateVoicesUSGB() { const list = window.speechSynthesis.getVoices() || []; voices = list.filter(v => /^en-(US|GB)/i.test(v.lang)); voiceReady = voices.length > 0; voiceSelect.innerHTML = ''; if (!voiceReady) { const o = document.createElement('option'); o.textContent = '（TTS非対応）'; voiceSelect.appendChild(o); return; } voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; voiceSelect.appendChild(o); }); voiceSelect.selectedIndex = 0; }
-    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(false); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
+    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(true); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
     async function speakGuarded(text, after) { await addAssistantBubbleWithAutoTTS(text); if (typeof after === 'function') after(); }
 
     /* ========= TTSとSTTの連携 ========= */
@@ -1965,11 +1965,26 @@
     }
 
     /* ========= 役割・ラベル ========= */
+    function isRoleLockedToA_(row) {
+      if (!row) return true;
+      const hasB = !!(row.roleB && String(row.roleB).trim());
+      const hasBFirst = !!(row.roleBFirst && String(row.roleBFirst).trim());
+      return !(hasB && hasBFirst);
+    }
+
+    function getEffectiveUserRole() {
+      if (!currentRow) return '';
+      if (roleLockedToA) return String(currentRow.roleB || 'B').trim() || 'B';
+      return userRoleSel.value || currentRow.roleA || 'A';
+    }
+
     function updateRoleBadges() {
       if (!currentRow) { el('userRoleBadge').textContent = 'User: —'; el('aiRoleBadge').textContent = 'AI: —'; return; }
+      const rA = currentRow.roleA || 'A';
+      const rB = currentRow.roleB || 'B';
       if (roleLockedToA) {
-        el('userRoleBadge').textContent = 'User: B';
-        el('aiRoleBadge').textContent = 'AI: A';
+        el('userRoleBadge').textContent = 'User: ' + rB;
+        el('aiRoleBadge').textContent = 'AI: ' + rA;
         return;
       }
       const selected = userRoleSel.value || currentRow.roleA || 'A';
@@ -2019,14 +2034,16 @@
       displayText.value = currentRow.prompt || currentRow.displayText || '';
 
       // ★ 役割B/Bの最初のセリフが参照できない場合 ⇒ AI=A固定、ユーザー変更不可
-      const hasB = !!(currentRow.roleB && String(currentRow.roleB).trim());
-      const hasBFirst = !!(currentRow.roleBFirst && String(currentRow.roleBFirst).trim());
-      roleLockedToA = !(hasB && hasBFirst);
+      roleLockedToA = isRoleLockedToA_(currentRow);
 
       userRoleSel.innerHTML = '';
       if (roleLockedToA) {
-        const o = document.createElement('option'); o.value = 'B'; o.textContent = 'B'; userRoleSel.appendChild(o);
-        userRoleSel.value = 'B';
+        const lockedRole = String(currentRow.roleB || 'B').trim() || 'B';
+        const o = document.createElement('option');
+        o.value = lockedRole;
+        o.textContent = lockedRole;
+        userRoleSel.appendChild(o);
+        userRoleSel.value = lockedRole;
         userRoleSel.disabled = true;
         roleLockNote.classList.remove('hidden');
         roleNormalNote.classList.add('hidden');
@@ -2059,7 +2076,7 @@
       if (configNotSet()) { statusSubmit('GAS_URL を設定してください。', true); return; }
       if (!isLoggedIn()) { statusSubmit('先にログインしてください。', true); return; }
       if (!currentBook || !currentUnit || !currentRow) { statusSubmit('ブック・単元・英会話を選んでください。', true); return; } if (!userRoleSel.value) { statusSubmit('あなたの役割を選んでください。', true); return; }
-      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const effectiveUserRole = getEffectiveUserRole();
       const sysMsg = `Conversation started.\nLevel: ${cefr.value}\nTheme: ${currentBook.name} / ${currentUnit} / ${currentRow.title}\nYour Role: ${effectiveUserRole}`;
       messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = true; firstUserSent = false; addMsg('system', sysMsg); selectorsFrozen = true;
       beginButtonLoading(btnPhase, '開始中…');
@@ -2087,7 +2104,7 @@
       beginButtonLoading(btnPhase, '生成中…');
       setBusy(true, 'フィードバックを生成中…'); showAiThinking('フィードバックを生成中'); stopRecognition();
       const tip = (currentRow && currentRow.preFeedbackTip) || ''; if (tip && !preFBShown) { addMsg('system', 'フィードバック直前のヒント：\n' + tip); preFBShown = true; }
-      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const effectiveUserRole = getEffectiveUserRole();
       // Feedback用メタデータ
       const extraMeta = {
         studentName: gIdentity.name,
@@ -2122,7 +2139,7 @@
       }
 
       if (!firstUserSent) { firstUserSent = true; firstLineHint.textContent = ''; }
-      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const effectiveUserRole = getEffectiveUserRole();
       const sendBtn = suffix === '?' ? btnSendQuestion : btnSendPeriod;
       messages.push({ role: 'user', content: text }); addMsg('user', text); userInput.value = '';
       beginButtonLoading(sendBtn, '送信中…');
@@ -2149,7 +2166,7 @@
       const ok = window.confirm(`以下の情報で提出します。よろしいですか？\n\n本人情報： ${identBadge.textContent}\n課題： ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n\n（注意：提出は1回限りです）`); if (!ok) return;
       beginButtonLoading(btnPhase, '提出中…');
       setBusy(true, '提出中…'); hasSubmitted = true; statusSubmit('提出中…', false); const clipboardText = formatForClipboard(); stopRecognition();
-      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const effectiveUserRole = getEffectiveUserRole();
       google.script.run.withSuccessHandler(res => {
         endButtonLoading(btnPhase);
         setBusy(false);
@@ -2179,7 +2196,7 @@
         })
         .submitTask(gIdentity, currentBook.name, currentUnit, currentRow, messages, returnedFB, cefr.value, effectiveUserRole);
     }
-    function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = roleLockedToA ? 'B' : userRoleSel.value; const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
+    function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = getEffectiveUserRole(); const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
     async function tryShowClipboard(txt) { if (!txt) return; await new Promise(r => setTimeout(r, 500)); const ok = window.confirm('このやりとりとフィードバックの文字情報をコピー＆ペーストしますか？'); if (ok) { try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); } else { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); } statusSubmit('会話＋フィードバックをクリップボードにコピーしました。', false); } catch (_) { } } }
 
     /* ========= リスタート ========= */
