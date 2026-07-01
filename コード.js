@@ -143,6 +143,7 @@ const BOOTSTRAP_ACTIONS_ = {
   auth_login: true,
   auth_check_lock: true,
   get_user_profile: true,
+  ensure_users_book: true,
   list_books: true,
   list_units: true,
   list_problems: true,
@@ -293,14 +294,18 @@ function polishIdentityLogSheet_(sh) {
 }
 
 function ensureUsersBookReady_() {
-  const ss = getOrCreateUsersSpreadsheet_();
-  const usersSh = ss.getSheetByName(USERS_SHEET_NAME);
-  const creatorSampleAdded = ensureUsersCreatorSampleRow_(usersSh);
+  const props = PropertiesService.getScriptProperties();
   return {
     ready: true,
-    usersSpreadsheetId: ss.getId(),
+    usersSpreadsheetId: props.getProperty(USERS_SS_PROP_KEY) || '',
+    defaultBookId: props.getProperty(DEFAULT_BOOK_PROP_KEY) || '',
+    defaultDebateBookId: props.getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY) || '',
     creatorEmail: getCreatorEmail_(),
-    creatorSampleAdded: creatorSampleAdded
+    scriptProperties: {
+      USERS_SPREADSHEET_ID: props.getProperty(USERS_SS_PROP_KEY) || '',
+      DEFAULT_THEME_BOOK_ID: props.getProperty(DEFAULT_BOOK_PROP_KEY) || '',
+      DEFAULT_DEBATE_BOOK_ID: props.getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY) || ''
+    }
   };
 }
 
@@ -407,7 +412,7 @@ function migrateLegacyWhitelistIfNeeded_(usersSs) {
       if (logValues.length > 1) {
         const rows = logValues.slice(1);
         if (rows.length) {
-          destLog.getRange(2, 1, rows.length, rows[0].length).setValues(rows);
+          sheetSetValues_(destLog, 2, 1, normalizeSheetRows_(rows, LOG_HEADER.length));
         }
       }
     }
@@ -444,7 +449,7 @@ function ensureUsersCreatorSampleRow_(sh) {
     return false;
   }
   if (sh.getLastRow() <= 1) {
-    sh.getRange(2, 1, 1, USERS_HEADER.length).setValues([sampleRow]);
+    sheetSetValues_(sh, 2, 1, [sampleRow]);
   } else {
     sh.appendRow(sampleRow);
   }
@@ -495,11 +500,11 @@ function ensureThemeBookStructure_(bookId) {
     String(firstRow[0] || '').trim() !== THEME_BOOK_HEADER[0];
 
   if (headerMissing) {
-    sh.getRange(1, 1, 1, lastCol).setValues([THEME_BOOK_HEADER]);
+    sheetSetValues_(sh, 1, 1, [THEME_BOOK_HEADER]);
   }
 
   if (sh.getLastRow() < 2) {
-    sh.appendRow(THEME_BOOK_SAMPLE_ROW);
+    sheetSetValues_(sh, 2, 1, [THEME_BOOK_SAMPLE_ROW]);
   }
 
   const def = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
@@ -524,7 +529,7 @@ function setupUsersSheetAdminGuide_(sh) {
 
 function getUserRowValues_(rowIndex) {
   const sh = getUsersSheet_();
-  return sh.getRange(rowIndex, 1, 1, USERS_HEADER.length).getValues()[0];
+  return sheetGetRow_(sh, rowIndex, USERS_HEADER.length);
 }
 
 function getUserLockStatus_(email) {
@@ -659,7 +664,7 @@ function recordAuthFailure_(rowIndex, currentFailCount) {
 
 function resetAuthFailures_(rowIndex) {
   const sh = getUsersSheet_();
-  sh.getRange(rowIndex, COL_FAIL_COUNT + 1, 1, 2).setValues([[0, '']]);
+  sheetSetValues_(sh, rowIndex, COL_FAIL_COUNT + 1, [[0, '']]);
 }
 
 function authVerifyInitial_(body) {
@@ -785,6 +790,33 @@ function _normalizeId4_(v) {
   const n = String(v == null ? '' : v).trim().replace(/\D/g, '');
   return n ? ('0000' + n).slice(-4) : '';
 }
+
+/** getRange(行, 列, 行数, 列数) — 第3引数は終了行ではなく行数 */
+function sheetSetValues_(sh, startRow, startCol, values) {
+  if (!sh || !values || !values.length) return;
+  const numRows = values.length;
+  const numCols = values.reduce((max, row) => Math.max(max, row ? row.length : 0), 0);
+  if (numCols < 1) return;
+  const normalized = values.map(row => {
+    const out = (row || []).slice(0, numCols);
+    while (out.length < numCols) out.push('');
+    return out;
+  });
+  sh.getRange(startRow, startCol, numRows, numCols).setValues(normalized);
+}
+
+function sheetGetRow_(sh, rowIndex, numCols) {
+  return sh.getRange(rowIndex, 1, 1, numCols).getValues()[0];
+}
+
+function normalizeSheetRows_(rows, numCols) {
+  return rows.map(row => {
+    const out = (row || []).slice(0, numCols);
+    while (out.length < numCols) out.push('');
+    return out;
+  });
+}
+
 function _getOrCreateSheet_(ss, name, header) {
   let sh = ss.getSheetByName(name);
   if (!sh) {
@@ -794,7 +826,7 @@ function _getOrCreateSheet_(ss, name, header) {
     const firstRow = sh.getRange(1, 1, 1, Math.max(1, header.length)).getValues()[0];
     const isEmptyHeader = firstRow.every(v => String(v || '').trim() === '');
     if (isEmptyHeader) {
-      sh.getRange(1, 1, 1, header.length).setValues([header]);
+      sheetSetValues_(sh, 1, 1, [header]);
     }
   }
   return sh;
@@ -852,26 +884,33 @@ function setupSampleTheme_(folder) {
 }
 
 /**
- * 初回セットアップ：users・テーマブックを作成し、見出し・管理者登録・ID 保存まで行う
+ * 初回セットアップ：users・Themes/Debates ブック・inbox を作成し、
+ * 見出し・サンプル行・管理者行・各種 ID をスクリプトプロパティへ保存する
  */
 function bootstrapAppResources_() {
   const props = PropertiesService.getScriptProperties();
-  const needsBootstrap = !props.getProperty(USERS_SS_PROP_KEY) ||
-    !props.getProperty(DEFAULT_BOOK_PROP_KEY);
+  const wasComplete = !!(
+    props.getProperty(USERS_SS_PROP_KEY) &&
+    props.getProperty(DEFAULT_BOOK_PROP_KEY) &&
+    props.getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY)
+  );
 
   const users = getOrCreateUsersSpreadsheet_();
   const bookId = ensureDefaultThemeBookId_();
+  const debateBookId = ensureDefaultDebateBookId_();
   const inboxId = ensureInbox_();
 
   return {
-    bootstrapped: needsBootstrap,
+    bootstrapped: !wasComplete,
     usersSpreadsheetId: users.getId(),
     defaultBookId: bookId,
+    defaultDebateBookId: debateBookId,
     inboxFolderId: inboxId,
     creatorEmail: getCreatorEmail_(),
     scriptProperties: {
       USERS_SPREADSHEET_ID: props.getProperty(USERS_SS_PROP_KEY) || '',
-      DEFAULT_THEME_BOOK_ID: props.getProperty(DEFAULT_BOOK_PROP_KEY) || ''
+      DEFAULT_THEME_BOOK_ID: props.getProperty(DEFAULT_BOOK_PROP_KEY) || '',
+      DEFAULT_DEBATE_BOOK_ID: props.getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY) || ''
     }
   };
 }
@@ -1482,19 +1521,25 @@ function setupSampleDebate_(folder) {
 
 function ensureDebateBookStructure_(bookId) {
   if (!bookId) return;
+  if (DEBATE_BOOK_SAMPLE_ROW.length !== DEBATE_BOOK_HEADER.length) {
+    throw new Error(
+      'DEBATE_BOOK_SAMPLE_ROW と HEADER の列数不一致: ' +
+      DEBATE_BOOK_SAMPLE_ROW.length + ' vs ' + DEBATE_BOOK_HEADER.length
+    );
+  }
   const ss = SpreadsheetApp.openById(bookId);
   let sh = ss.getSheetByName(DEBATE_BOOK_SHEET_NAME);
   if (!sh) sh = ss.insertSheet(DEBATE_BOOK_SHEET_NAME);
 
   const lastCol = DEBATE_BOOK_HEADER.length;
-  const firstRow = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  const firstRow = sheetGetRow_(sh, 1, lastCol);
   const headerMissing = firstRow.every(v => String(v || '').trim() === '') ||
     String(firstRow[0] || '').trim() !== DEBATE_BOOK_HEADER[0];
   if (headerMissing) {
-    sh.getRange(1, 1, 1, lastCol).setValues([DEBATE_BOOK_HEADER]);
+    sheetSetValues_(sh, 1, 1, [DEBATE_BOOK_HEADER]);
   }
   if (sh.getLastRow() < 2) {
-    sh.appendRow(DEBATE_BOOK_SAMPLE_ROW);
+    sheetSetValues_(sh, 2, 1, [DEBATE_BOOK_SAMPLE_ROW]);
   }
   const def = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
   if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
