@@ -30,15 +30,29 @@ const DEBATE_BOOK_HEADER = [
   'PM用プロンプト', 'LO用プロンプト', 'MG用プロンプト', 'MO用プロンプト', 'OR用プロンプト', 'GR用プロンプト',
   '備考'
 ];
+const DEBATE_DEFAULT_SYS_INSTRUCTIONS_ =
+  'Constructive speeches (PM, LO): Use OREO (Opinion, Reason, Example, restated Opinion). ' +
+  'Include exactly 2 reasons; give one brief example for each reason.\n' +
+  'Rebuttal speeches (MG, MO): Rebut at least 2 points from the other side, then add 1 new supporting point for your case.\n' +
+  'Reply speeches (OR, GR): No new arguments. Summarize the clash and explain why your side wins.\n' +
+  'AI debaters have no preparation time: use all prior speeches and respond immediately.';
+
 const DEBATE_BOOK_SAMPLE_ROW = [
-  1, 'School Uniforms', 'This house believes that school uniforms should be mandatory.',
-  'Discuss whether school uniforms should be required for all students.',
-  'You are participating in a parliamentary debate. Use clear OREO structure for constructives.',
+  1,
+  'Dogs vs Cats (Pet Debate)',
+  'This house believes that if you are going to buy a pet, you should choose a cat rather than a dog.',
+  'ペットとして買うなら、犬と猫であれば猫だ、という議題で英語ディベートを行います。肯定派は「猫を選ぶべき」、否定派は「犬を選ぶべき」と論じます。',
+  DEBATE_DEFAULT_SYS_INSTRUCTIONS_,
   120, 120, 120, 120, 60, 60, 120, 60,
-  3, 3, 1.0,
+  1, 1, 1.0,
   'Judge on argument quality, rebuttal, and structure. Do not mention human vs AI.',
-  '', '', '', '', '', '',
-  ''
+  'PM (Government): Exactly 2 reasons with examples in OREO format.',
+  'LO (Opposition): Briefly rebut PM, then exactly 2 reasons with examples in OREO format.',
+  'MG: Rebut LO with at least 2 points, then defend PM case with 1 extension.',
+  'MO: Rebut MG with at least 2 points, then extend opposition case with 1 point.',
+  'OR: Summary only, no new arguments.',
+  'GR: Summary only, no new arguments.',
+  'Sample: AI strength 1 (easy). Default assignment: Government=human, Opposition=AI.'
 ];
 
 const DEBATE_FLOW = [
@@ -1670,7 +1684,7 @@ function buildDebateSpeechPrompt_(row, speechId, side) {
   lines.push('You are competing in a parliamentary debate.');
   lines.push(`Motion: ${motion}`);
   lines.push(`You are delivering the ${step.label} speech for the ${sideLabel} side.`);
-  if (row && row.sys) lines.push(`General instructions: ${row.sys}`);
+  lines.push(`General instructions: ${_s(row && row.sys) || DEBATE_DEFAULT_SYS_INSTRUCTIONS_}`);
 
   const extra = row && row.speechPrompts && row.speechPrompts[speechId];
   if (extra) lines.push(`Speech-specific instructions: ${extra}`);
@@ -1679,12 +1693,15 @@ function buildDebateSpeechPrompt_(row, speechId, side) {
   lines.push(`Logical rigor: ${aiStrengthToText_(row && row.aiLogicTightness, 'logic')}`);
 
   const typeRules = {
-    constructive: 'Present your OREO case (Opinion, Reason, Example, Opinion restated). For LO, also rebut the PM briefly.',
-    rebuttal: 'Rebut opposing arguments, then defend and extend your side\'s case.',
-    reply: 'Summarize the debate. NO new arguments. Explain why your side wins.'
+    constructive: speechId === 'PM'
+      ? 'Constructive (PM): OREO format. State your opinion, give exactly 2 reasons with one brief example each, restate your opinion.'
+      : 'Constructive (LO): Briefly rebut the PM, then OREO with exactly 2 reasons with one brief example each.',
+    rebuttal: 'Rebuttal: Address at least 2 opposing arguments, then defend and extend your side with 1 supporting point.',
+    reply: 'Reply: Summarize the debate. NO new arguments. Explain why your side wins.'
   };
   lines.push(`Speech type rules: ${typeRules[step.speechType] || ''}`);
-  lines.push(`Deliver ONLY the speech text in English. No meta-commentary, labels, or stage directions.`);
+  lines.push('You have NO preparation time. Read all prior speeches and respond immediately.');
+  lines.push('Deliver ONLY the speech text in English. No meta-commentary, labels, or stage directions.');
   lines.push(`Target length: approximately ${Math.round((row[step.secKey] || 120) / 60 * 150)} words.`);
 
   return lines.join('\n');
@@ -1737,7 +1754,10 @@ function generateDebateSpeech_(body) {
   if (history) {
     serverMsgs.push({ role: 'user', content: 'Previous speeches in this debate:\n\n' + history });
   }
-  serverMsgs.push({ role: 'user', content: `Now deliver your ${speechId} speech for the ${DEBATE_SIDE_LABEL[side]} side.` });
+  serverMsgs.push({
+    role: 'user',
+    content: `Now deliver your ${speechId} speech for the ${DEBATE_SIDE_LABEL[side]} side immediately, with no preparation time, using all prior speeches above.`
+  });
 
   const secKey = (getDebateFlowStep_(speechId) || {}).secKey;
   const sec = secKey ? (row[secKey] || 120) : 120;

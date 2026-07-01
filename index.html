@@ -2859,6 +2859,18 @@
       await advanceDebateStep();
     }
 
+    function getAssignmentForSpeechId(speechId) {
+      return debateAssignments.find(a => a.speechId === speechId) || null;
+    }
+
+    function getNextSpeechStepAfterIndex(idx) {
+      for (let i = idx + 1; i < DEBATE_FLOW.length; i++) {
+        const s = DEBATE_FLOW[i];
+        if (s && s.type !== 'prep') return s;
+      }
+      return null;
+    }
+
     async function advanceDebateStep() {
       if (debateStepIndex >= DEBATE_FLOW.length) {
         await runDebateJudge();
@@ -2868,8 +2880,14 @@
       if (!step) { debateStepIndex++; return advanceDebateStep(); }
 
       if (step.type === 'prep') {
+        const nextSpeech = getNextSpeechStepAfterIndex(debateStepIndex);
+        const nextAssign = nextSpeech ? getAssignmentForSpeechId(nextSpeech.id) : null;
+        if (nextAssign && nextAssign.assigneeType === 'ai') {
+          debateStepIndex++;
+          return advanceDebateStep();
+        }
         debatePhase = 'prep';
-        addDebateSystemMsg(`⏳ ${step.label}（${debateRow[step.secKey] || 60}秒）`);
+        addDebateSystemMsg(`⏳ ${step.label}（人間チーム向け・${debateRow[step.secKey] || 60}秒）`);
         updateDebateUI();
         return;
       }
