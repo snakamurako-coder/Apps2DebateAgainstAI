@@ -18,7 +18,43 @@ const THEME_BOOK_SAMPLE_ROW = [
   'Focus on grammar.', 'Try to use "Nice to meet you".', '', ''
 ];
 
-// スクリプトプロパティキー
+// パーラメンタリーディベート
+const DEBATES_DIR = 'Debates';
+const DEBATE_SAMPLE_BOOK_NAME = 'Sample_Debate_Book';
+const DEBATE_BOOK_SHEET_NAME = 'Assignments';
+const DEFAULT_DEBATE_BOOK_PROP_KEY = 'DEFAULT_DEBATE_BOOK_ID';
+const DEBATE_BOOK_HEADER = [
+  '通し番号', '見出し', 'ディベートテーマ', '生徒への表示文', '生成AIへの指示文',
+  'PM秒', 'LO秒', 'MG秒', 'MO秒', 'OR秒', 'GR秒', '作戦タイム1秒', '作戦タイム2秒',
+  'AI反論強度', 'AI論理厳密度', 'AI TTS速度', 'ジャッジ用プロンプト',
+  'PM用プロンプト', 'LO用プロンプト', 'MG用プロンプト', 'MO用プロンプト', 'OR用プロンプト', 'GR用プロンプト',
+  '備考'
+];
+const DEBATE_BOOK_SAMPLE_ROW = [
+  1, 'School Uniforms', 'This house believes that school uniforms should be mandatory.',
+  'Discuss whether school uniforms should be required for all students.',
+  'You are participating in a parliamentary debate. Use clear OREO structure for constructives.',
+  120, 120, 120, 120, 60, 60, 120, 60,
+  3, 3, 1.0,
+  'Judge on argument quality, rebuttal, and structure. Do not mention human vs AI.',
+  '', '', '', '', '', '',
+  ''
+];
+
+const DEBATE_FLOW = [
+  { id: 'PM', side: 'gov', label: 'Prime Minister', speechType: 'constructive', secKey: 'pmSec' },
+  { id: 'LO', side: 'opp', label: 'Leader of Opposition', speechType: 'constructive', secKey: 'loSec' },
+  { id: 'PREP1', type: 'prep', secKey: 'prep1Sec' },
+  { id: 'MG', side: 'gov', label: 'Member of Government', speechType: 'rebuttal', secKey: 'mgSec' },
+  { id: 'MO', side: 'opp', label: 'Member of Opposition', speechType: 'rebuttal', secKey: 'moSec' },
+  { id: 'PREP2', type: 'prep', secKey: 'prep2Sec' },
+  { id: 'OR', side: 'opp', label: 'Opposition Reply', speechType: 'reply', secKey: 'orSec' },
+  { id: 'GR', side: 'gov', label: 'Government Reply', speechType: 'reply', secKey: 'grSec' }
+];
+
+const DEBATE_SIDE_LABEL = { gov: 'Government', opp: 'Opposition' };
+const DEBATE_SIDE_JA = { gov: '肯定派', opp: '否定派' };
+
 const LEGACY_WHITELIST_SS_PROP_KEY = 'WHITELIST_SPREADSHEET_ID'; // マージ後に削除
 const LEGACY_WHITELIST_MIGRATED_KEY = 'LEGACY_WHITELIST_MIGRATED';
 const DEFAULT_BOOK_PROP_KEY = 'DEFAULT_THEME_BOOK_ID';
@@ -63,7 +99,7 @@ const STATUS_REGISTERED = '登録済';
 /*** ===================== Web アプリ入口 ===================== ***/
 function doGet() {
   return HtmlService.createHtmlOutputFromFile('index')
-    .setTitle('英会話（半自動ターン進行）');
+    .setTitle('AI英会話・パーラメンタリーディベート');
 }
 
 function doPost(e) {
@@ -97,7 +133,11 @@ const BOOTSTRAP_ACTIONS_ = {
   list_units: true,
   list_problems: true,
   submit_task: true,
-  submit_identity: true
+  submit_identity: true,
+  list_debate_books: true,
+  list_debate_units: true,
+  list_debate_sets: true,
+  submit_debate: true
 };
 
 function dispatchAction_(body) {
@@ -140,6 +180,21 @@ function dispatchAction_(body) {
       return wrapSuccess_(submitTask(body.gIdentity, body.bookName, body.unitName, body.row, body.messages, body.returnedFB, body.cefr, body.userRoleName));
     case 'submit_identity':
       return wrapSuccess_(submitIdentityConfirmation(body));
+    case 'list_debate_books':
+      return wrapSuccess_({
+        books: listDebateBooksCached(!!body.forceUpdate),
+        defaultBookId: PropertiesService.getScriptProperties().getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY) || ''
+      });
+    case 'list_debate_units':
+      return wrapSuccess_(listDebateUnitsCached(body.spreadsheetId, !!body.forceUpdate));
+    case 'list_debate_sets':
+      return wrapSuccess_(listDebateSetsCached(body.spreadsheetId, body.sheetName, !!body.forceUpdate));
+    case 'generate_debate_speech':
+      return wrapSuccess_(generateDebateSpeech_(body));
+    case 'judge_debate':
+      return wrapSuccess_(judgeDebate_(body));
+    case 'submit_debate':
+      return wrapSuccess_(submitDebate_(body));
     default:
       throw new Error('不明な action: ' + action);
   }
@@ -925,7 +980,7 @@ function listThemeProblems(spreadsheetId, sheetName) {
 }
 
 /*** ===================== OpenAI 呼び出し ===================== ***/
-function sanitizeMessages_(messages, keepPairs) {
+function sanitizeMessages_(messages, keepPairs, keepAll) {
   const systems = [], ua = [];
   if (!Array.isArray(messages)) messages = [];
   for (const m of messages) {
@@ -935,6 +990,7 @@ function sanitizeMessages_(messages, keepPairs) {
     if (role === 'system') systems.push({ role, content });
     else if (role === 'user' || role === 'assistant') ua.push({ role, content });
   }
+  if (keepAll) return systems.concat(ua);
   const keptUA = []; let pairs = 0;
   for (let i = ua.length - 1; i >= 0; i--) {
     keptUA.unshift(ua[i]);
@@ -948,10 +1004,11 @@ function chat_(messages, opts) {
   if (!key) throw new Error('OPENAI_API_KEY 未設定（スクリプトプロパティに設定してください）');
 
   const model = OPENAI_MODEL;
+  const keepAll = !!(opts && opts.keepAll);
   const keepPairs = (opts && opts.keepPairs) || 4;
   const maxTokens = (opts && opts.maxTokens) || 320;
 
-  const sanitized = sanitizeMessages_(messages, keepPairs);
+  const sanitized = sanitizeMessages_(messages, keepPairs, keepAll);
   const body = { model, messages: sanitized, max_tokens: maxTokens };
   if (typeof OPENAI_TEMPERATURE === 'number') body.temperature = OPENAI_TEMPERATURE;
 
@@ -1378,5 +1435,424 @@ function submitTask(gIdentity, bookName, unitName, row, messages, returnedFB, ce
     messages: Array.isArray(messages) ? messages : []
   };
   const res = endAndSubmitConversation(payload);
+  return { fileName: res && res.fileName ? res.fileName : '' };
+}
+
+/*** ===================== パーラメンタリーディベート ===================== ***/
+
+function getOrCreateDebatesFolder_() {
+  const parentId = getParentFolderId_();
+  const parent = DriveApp.getFolderById(parentId);
+  let folder;
+  const it = parent.getFoldersByName(DEBATES_DIR);
+  if (it.hasNext()) {
+    folder = it.next();
+  } else {
+    folder = parent.createFolder(DEBATES_DIR);
+  }
+  const files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
+  if (!files.hasNext()) {
+    setupSampleDebate_(folder);
+  }
+  return folder;
+}
+
+function setupSampleDebate_(folder) {
+  const ss = SpreadsheetApp.create(DEBATE_SAMPLE_BOOK_NAME);
+  DriveApp.getFileById(ss.getId()).moveTo(folder);
+  const bookId = ss.getId();
+  ensureDebateBookStructure_(bookId);
+  PropertiesService.getScriptProperties().setProperty(DEFAULT_DEBATE_BOOK_PROP_KEY, bookId);
+  return bookId;
+}
+
+function ensureDebateBookStructure_(bookId) {
+  if (!bookId) return;
+  const ss = SpreadsheetApp.openById(bookId);
+  let sh = ss.getSheetByName(DEBATE_BOOK_SHEET_NAME);
+  if (!sh) sh = ss.insertSheet(DEBATE_BOOK_SHEET_NAME);
+
+  const lastCol = DEBATE_BOOK_HEADER.length;
+  const firstRow = sh.getRange(1, 1, 1, lastCol).getValues()[0];
+  const headerMissing = firstRow.every(v => String(v || '').trim() === '') ||
+    String(firstRow[0] || '').trim() !== DEBATE_BOOK_HEADER[0];
+  if (headerMissing) {
+    sh.getRange(1, 1, 1, lastCol).setValues([DEBATE_BOOK_HEADER]);
+  }
+  if (sh.getLastRow() < 2) {
+    sh.appendRow(DEBATE_BOOK_SAMPLE_ROW);
+  }
+  const def = ss.getSheetByName('シート1') || ss.getSheetByName('Sheet1');
+  if (def && ss.getSheets().length > 1) ss.deleteSheet(def);
+}
+
+function ensureDefaultDebateBookId_() {
+  const props = PropertiesService.getScriptProperties();
+  const saved = props.getProperty(DEFAULT_DEBATE_BOOK_PROP_KEY);
+  if (saved) {
+    try {
+      DriveApp.getFileById(saved);
+      ensureDebateBookStructure_(saved);
+      return saved;
+    } catch (_) {
+      props.deleteProperty(DEFAULT_DEBATE_BOOK_PROP_KEY);
+    }
+  }
+  const folder = getOrCreateDebatesFolder_();
+  const files = folder.getFilesByType(MimeType.GOOGLE_SHEETS);
+  let bookId = '';
+  while (files.hasNext()) {
+    const f = files.next();
+    if (!bookId) bookId = f.getId();
+  }
+  if (!bookId) bookId = setupSampleDebate_(folder);
+  else ensureDebateBookStructure_(bookId);
+  if (bookId) props.setProperty(DEFAULT_DEBATE_BOOK_PROP_KEY, bookId);
+  return bookId || '';
+}
+
+function listDebateBooksCached(forceUpdate) {
+  const cache = CacheService.getScriptCache();
+  const key = 'debateBooks';
+  if (!forceUpdate) {
+    const cached = cache.get(key);
+    if (cached) return JSON.parse(cached);
+  }
+  ensureDefaultDebateBookId_();
+  const debates = getOrCreateDebatesFolder_();
+  const files = debates.getFiles();
+  const out = [];
+  while (files.hasNext()) {
+    const f = files.next();
+    if (f.getMimeType() === MimeType.GOOGLE_SHEETS) {
+      out.push({ id: f.getId(), name: f.getName() });
+    }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  cache.put(key, JSON.stringify(out), 3600);
+  return out;
+}
+
+function listDebateUnitsCached(spreadsheetId, forceUpdate) {
+  const cache = CacheService.getScriptCache();
+  const key = 'debateUnits:' + spreadsheetId;
+  if (!forceUpdate) {
+    const cached = cache.get(key);
+    if (cached) return JSON.parse(cached);
+  }
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const assignments = ss.getSheetByName('Assignments');
+  const units = assignments
+    ? ['Assignments']
+    : ss.getSheets().filter(sh => !sh.isSheetHidden()).map(sh => sh.getName());
+  cache.put(key, JSON.stringify(units), 3600);
+  return units;
+}
+
+function listDebateSetsCached(spreadsheetId, sheetName, forceUpdate) {
+  const cache = CacheService.getScriptCache();
+  const key = `debateSets:${spreadsheetId}:${sheetName}`;
+  if (!forceUpdate) {
+    const cached = cache.get(key);
+    if (cached) return JSON.parse(cached);
+  }
+  const rows = listDebateSets(spreadsheetId, sheetName);
+  cache.put(key, JSON.stringify(rows), 3600);
+  return rows;
+}
+
+function listDebateSets(spreadsheetId, sheetName) {
+  const ss = SpreadsheetApp.openById(spreadsheetId);
+  const sh = ss.getSheetByName('Assignments') || ss.getSheetByName(sheetName);
+  if (!sh) throw new Error(`シートが見つかりません: ${sheetName}`);
+  const values = sh.getDataRange().getValues();
+  if (values.length < 2) return [];
+
+  const h = values[0].map(_s);
+  const idx = {
+    serial: h.indexOf('通し番号'), title: h.indexOf('見出し'),
+    motion: h.indexOf('ディベートテーマ'), disp: h.indexOf('生徒への表示文'),
+    sys: h.indexOf('生成AIへの指示文'),
+    pmSec: h.indexOf('PM秒'), loSec: h.indexOf('LO秒'),
+    mgSec: h.indexOf('MG秒'), moSec: h.indexOf('MO秒'),
+    orSec: h.indexOf('OR秒'), grSec: h.indexOf('GR秒'),
+    prep1Sec: h.indexOf('作戦タイム1秒'), prep2Sec: h.indexOf('作戦タイム2秒'),
+    rebuttal: h.indexOf('AI反論強度'), logic: h.indexOf('AI論理厳密度'),
+    ttsRate: h.indexOf('AI TTS速度'), judgePrompt: h.indexOf('ジャッジ用プロンプト'),
+    pmPrompt: h.indexOf('PM用プロンプト'), loPrompt: h.indexOf('LO用プロンプト'),
+    mgPrompt: h.indexOf('MG用プロンプト'), moPrompt: h.indexOf('MO用プロンプト'),
+    orPrompt: h.indexOf('OR用プロンプト'), grPrompt: h.indexOf('GR用プロンプト'),
+    note: h.indexOf('備考')
+  };
+
+  const num = (row, key, def) => {
+    const v = idx[key] >= 0 ? row[idx[key]] : def;
+    const n = Number(v);
+    return isNaN(n) ? def : n;
+  };
+
+  const rows = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const hasTitle = idx.title >= 0 && _s(row[idx.title]);
+    const hasSerial = idx.serial >= 0 && _s(row[idx.serial]);
+    if (!hasTitle && !hasSerial) continue;
+
+    rows.push({
+      rowIndex: r + 1,
+      serial: _s(idx.serial >= 0 ? row[idx.serial] : ''),
+      title: _s(idx.title >= 0 ? row[idx.title] : ''),
+      motion: _s(idx.motion >= 0 ? row[idx.motion] : ''),
+      displayText: _s(idx.disp >= 0 ? row[idx.disp] : ''),
+      sys: _s(idx.sys >= 0 ? row[idx.sys] : ''),
+      pmSec: num(row, 'pmSec', 120), loSec: num(row, 'loSec', 120),
+      mgSec: num(row, 'mgSec', 120), moSec: num(row, 'moSec', 120),
+      orSec: num(row, 'orSec', 60), grSec: num(row, 'grSec', 60),
+      prep1Sec: num(row, 'prep1Sec', 120), prep2Sec: num(row, 'prep2Sec', 60),
+      aiRebuttalStrength: _s(idx.rebuttal >= 0 ? row[idx.rebuttal] : '3'),
+      aiLogicTightness: _s(idx.logic >= 0 ? row[idx.logic] : '3'),
+      aiTtsRate: clampDebateTtsRate_(idx.ttsRate >= 0 ? row[idx.ttsRate] : 1.0),
+      judgePrompt: _s(idx.judgePrompt >= 0 ? row[idx.judgePrompt] : ''),
+      speechPrompts: {
+        PM: _s(idx.pmPrompt >= 0 ? row[idx.pmPrompt] : ''),
+        LO: _s(idx.loPrompt >= 0 ? row[idx.loPrompt] : ''),
+        MG: _s(idx.mgPrompt >= 0 ? row[idx.mgPrompt] : ''),
+        MO: _s(idx.moPrompt >= 0 ? row[idx.moPrompt] : ''),
+        OR: _s(idx.orPrompt >= 0 ? row[idx.orPrompt] : ''),
+        GR: _s(idx.grPrompt >= 0 ? row[idx.grPrompt] : '')
+      },
+      note: _s(idx.note >= 0 ? row[idx.note] : '')
+    });
+  }
+  return rows;
+}
+
+function clampDebateTtsRate_(v) {
+  const n = parseFloat(v);
+  if (isNaN(n)) return 1.0;
+  return Math.max(0.6, Math.min(2.0, n));
+}
+
+function getDebateFlowStep_(speechId) {
+  return DEBATE_FLOW.find(s => s.id === speechId) || null;
+}
+
+function aiStrengthToText_(value, kind) {
+  const n = parseInt(String(value || '3'), 10);
+  const level = isNaN(n) ? 3 : Math.max(1, Math.min(5, n));
+  if (kind === 'rebuttal') {
+    const map = {
+      1: 'Use minimal rebuttal; focus on your own case.',
+      2: 'Rebut only the strongest opposing point briefly.',
+      3: 'Rebut key opposing arguments clearly.',
+      4: 'Rebut thoroughly and challenge weak logic in opposing speeches.',
+      5: 'Aggressively rebut every major opposing claim with evidence.'
+    };
+    return map[level];
+  }
+  const map = {
+    1: 'You may leave minor logical gaps; prioritize persuasion.',
+    2: 'Mostly coherent; occasional leaps are acceptable.',
+    3: 'Maintain solid logical structure throughout.',
+    4: 'Tight logic with no unsupported claims.',
+    5: 'Maximum rigor: every claim must be supported; expose logical flaws.'
+  };
+  return map[level];
+}
+
+function buildDebateSpeechPrompt_(row, speechId, side) {
+  const step = getDebateFlowStep_(speechId);
+  if (!step || step.type === 'prep') throw new Error('Invalid speech: ' + speechId);
+
+  const sideLabel = DEBATE_SIDE_LABEL[side] || side;
+  const motion = _s(row && row.motion);
+  const lines = [];
+  lines.push('You are competing in a parliamentary debate.');
+  lines.push(`Motion: ${motion}`);
+  lines.push(`You are delivering the ${step.label} speech for the ${sideLabel} side.`);
+  if (row && row.sys) lines.push(`General instructions: ${row.sys}`);
+
+  const extra = row && row.speechPrompts && row.speechPrompts[speechId];
+  if (extra) lines.push(`Speech-specific instructions: ${extra}`);
+
+  lines.push(`Rebuttal intensity: ${aiStrengthToText_(row && row.aiRebuttalStrength, 'rebuttal')}`);
+  lines.push(`Logical rigor: ${aiStrengthToText_(row && row.aiLogicTightness, 'logic')}`);
+
+  const typeRules = {
+    constructive: 'Present your OREO case (Opinion, Reason, Example, Opinion restated). For LO, also rebut the PM briefly.',
+    rebuttal: 'Rebut opposing arguments, then defend and extend your side\'s case.',
+    reply: 'Summarize the debate. NO new arguments. Explain why your side wins.'
+  };
+  lines.push(`Speech type rules: ${typeRules[step.speechType] || ''}`);
+  lines.push(`Deliver ONLY the speech text in English. No meta-commentary, labels, or stage directions.`);
+  lines.push(`Target length: approximately ${Math.round((row[step.secKey] || 120) / 60 * 150)} words.`);
+
+  return lines.join('\n');
+}
+
+function debateSpeechLabel_(meta) {
+  const step = getDebateFlowStep_(meta && meta.speechId);
+  const side = DEBATE_SIDE_LABEL[(meta && meta.side) || 'gov'] || 'Government';
+  const label = (step && step.label) || (meta && meta.speechId) || 'Speech';
+  return `[${label} - ${side}]`;
+}
+
+function debateMessagesToHistoryText_(messages, includeMeta) {
+  const lines = [];
+  if (!Array.isArray(messages)) return '';
+  for (const m of messages) {
+    const content = stripControl_(_s(m && m.content));
+    if (!content) continue;
+    const meta = m.meta || {};
+    if (includeMeta === 'full') {
+      const sideJa = DEBATE_SIDE_JA[meta.side] || meta.side;
+      const who = meta.assigneeType === 'human' ? ('Human' + (meta.speakerName ? ': ' + meta.speakerName : '')) : 'AI';
+      lines.push(`${debateSpeechLabel_(meta)} (${sideJa}, ${who}): ${content}`);
+    } else {
+      lines.push(`${debateSpeechLabel_(meta)}: ${content}`);
+    }
+  }
+  return lines.join('\n\n');
+}
+
+function buildAnonymizedTranscript_(row, messages) {
+  const motion = _s(row && row.motion);
+  const body = debateMessagesToHistoryText_(messages, false);
+  return `Motion: ${motion}\n\n${body}`.trim();
+}
+
+function formatFullDebateTranscript_(messages) {
+  return debateMessagesToHistoryText_(messages, 'full');
+}
+
+function generateDebateSpeech_(body) {
+  const row = body.row || {};
+  const speechId = _s(body.speechId);
+  const side = _s(body.side) || 'gov';
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+
+  const sys = buildDebateSpeechPrompt_(row, speechId, side);
+  const history = debateMessagesToHistoryText_(messages, false);
+  const serverMsgs = [{ role: 'system', content: sys }];
+  if (history) {
+    serverMsgs.push({ role: 'user', content: 'Previous speeches in this debate:\n\n' + history });
+  }
+  serverMsgs.push({ role: 'user', content: `Now deliver your ${speechId} speech for the ${DEBATE_SIDE_LABEL[side]} side.` });
+
+  const secKey = (getDebateFlowStep_(speechId) || {}).secKey;
+  const sec = secKey ? (row[secKey] || 120) : 120;
+  const maxTokens = Math.min(1200, Math.max(400, Math.round(sec / 60 * 200)));
+
+  return chat_(serverMsgs, { keepAll: true, maxTokens: maxTokens }) || '';
+}
+
+function judgeDebate_(body) {
+  const row = body.row || {};
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const transcript = buildAnonymizedTranscript_(row, messages);
+  if (!transcript || transcript.length < 20) throw new Error('ジャッジするスピーチがありません');
+
+  const judgeExtra = _s(row.judgePrompt);
+  const sys = `You are an impartial parliamentary debate judge.
+You will receive a full debate transcript with speeches labeled by role and side (Government / Opposition).
+Determine which side won the debate on the merits of argument, rebuttal, and structure.
+
+STRICT RULES:
+- Judge ONLY based on the arguments in the transcript.
+- Do NOT speculate about whether speakers are human or AI.
+- Do NOT mention human/AI in your verdict.
+- Output JSON ONLY with this exact shape:
+{"winnerSide":"gov"|"opp"|"draw","verdictJa":"..."}
+- verdictJa: concise Japanese explanation (3-6 sentences).
+${judgeExtra ? 'Additional criteria: ' + judgeExtra : ''}`;
+
+  const raw = chat_([
+    { role: 'system', content: sys },
+    { role: 'user', content: transcript }
+  ], { keepAll: true, maxTokens: 500 });
+
+  return parseJudgeVerdict_(raw);
+}
+
+function parseJudgeVerdict_(raw) {
+  const text = _s(raw);
+  let parsed = null;
+  try {
+    const m = text.match(/\{[\s\S]*\}/);
+    if (m) parsed = JSON.parse(m[0]);
+  } catch (_) {}
+  if (parsed && (parsed.winnerSide === 'gov' || parsed.winnerSide === 'opp' || parsed.winnerSide === 'draw')) {
+    return {
+      winnerSide: parsed.winnerSide,
+      verdictJa: _s(parsed.verdictJa) || text
+    };
+  }
+  const lower = text.toLowerCase();
+  let winnerSide = 'draw';
+  if (/government|affirmative|肯定/.test(lower) && !/opposition|negative|否定/.test(lower)) winnerSide = 'gov';
+  else if (/opposition|negative|否定/.test(lower)) winnerSide = 'opp';
+  return { winnerSide: winnerSide, verdictJa: text || '判定できませんでした。' };
+}
+
+function endAndSubmitDebate_(payload) {
+  const inbox = DriveApp.getFolderById(ensureInbox_());
+  const tz = Session.getScriptTimeZone();
+  const now = new Date();
+  const tsHuman = Utilities.formatDate(now, tz, 'yyyy/MM/dd HH:mm:ss');
+  const ymdHMS = Utilities.formatDate(now, tz, 'yyMMddHHmmss');
+
+  const bookName = _s(payload.bookName);
+  const unitName = _s(payload.unitName);
+  const serial = _s(payload.row && payload.row.serial);
+  const title = _s(payload.row && payload.row.title);
+  const motion = _s(payload.row && payload.row.motion);
+  const id4 = _s(payload.studentId4);
+  const student = _s(payload.studentName);
+  const winnerSide = _s(payload.winnerSide);
+  const verdictJa = _s(payload.verdictJa);
+
+  const rawName = `DEBATE_${bookName}_${serial}_${title}_${id4 || '0000'}_${ymdHMS}.json`;
+  const safeName = sanitizeFileName_(rawName);
+
+  const out = {
+    mode: 'debate',
+    timestamp: tsHuman,
+    book: bookName,
+    unit: unitName,
+    serial: serial,
+    title: title,
+    motion: motion,
+    studentId4: id4,
+    studentName: student,
+    assignments: payload.assignments || [],
+    winnerSide: winnerSide,
+    verdictJa: verdictJa,
+    fullTranscript: _s(payload.fullTranscript),
+    judgeTranscript: _s(payload.judgeTranscript),
+    messages: Array.isArray(payload.messages) ? payload.messages : []
+  };
+
+  const blob = Utilities.newBlob(JSON.stringify(out, null, 2), 'application/json', safeName);
+  inbox.createFile(blob);
+  return { ok: true, fileName: safeName };
+}
+
+function submitDebate_(body) {
+  const row = body.row || {};
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const gIdentity = body.gIdentity || {};
+  const res = endAndSubmitDebate_({
+    bookName: _s(body.bookName),
+    unitName: _s(body.unitName),
+    row: row,
+    studentId4: _s(gIdentity.id4),
+    studentName: _s(gIdentity.name),
+    assignments: body.assignments || [],
+    winnerSide: _s(body.winnerSide),
+    verdictJa: _s(body.verdictJa),
+    fullTranscript: formatFullDebateTranscript_(messages),
+    judgeTranscript: buildAnonymizedTranscript_(row, messages),
+    messages: messages
+  });
   return { fileName: res && res.fileName ? res.fileName : '' };
 }

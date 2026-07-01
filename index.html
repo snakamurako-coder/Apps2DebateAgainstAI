@@ -5,7 +5,7 @@
   <base target="_top">
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AI英会話（半自動進行）</title>
+  <title>AI英会話・パーラメンタリーディベート</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -252,6 +252,122 @@
       flex-shrink: 0;
     }
 
+    /* モード切替 */
+    .mode-tabs {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.35rem;
+      background: #dee2e6;
+      border-radius: var(--border-radius);
+      margin-bottom: var(--spacing-2);
+    }
+
+    .mode-tab {
+      flex: 1;
+      padding: 0.65rem 1rem;
+      border: 2px solid transparent;
+      border-radius: calc(var(--border-radius) - 2px);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: var(--font-size-base);
+      font-weight: 600;
+      color: #495057;
+      width: auto;
+    }
+
+    .mode-tab.active {
+      background: var(--surface-color);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    }
+
+    /* ディベート */
+    :root {
+      --gov-color: #dc3545;
+      --gov-bg: #fde8e8;
+      --opp-color: #007aff;
+      --opp-bg: #e9f5ff;
+    }
+
+    .msg.debate-gov {
+      background: var(--gov-bg);
+      border-left: 4px solid var(--gov-color);
+      align-self: flex-start;
+      text-align: left;
+    }
+
+    .msg.debate-opp {
+      background: var(--opp-bg);
+      border-left: 4px solid var(--opp-color);
+      align-self: flex-start;
+      text-align: left;
+    }
+
+    .msg.debate-prep {
+      background: var(--system-bubble-bg);
+      align-self: center;
+      font-size: var(--font-size-sm);
+      color: var(--text-color-muted);
+    }
+
+    .debate-meta-label {
+      display: block;
+      font-size: var(--font-size-sm);
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+      color: var(--text-color-muted);
+    }
+
+    .msg.debate-gov .debate-meta-label { color: var(--gov-color); }
+    .msg.debate-opp .debate-meta-label { color: var(--opp-color); }
+
+    .assign-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: var(--font-size-sm);
+    }
+
+    .assign-table th,
+    .assign-table td {
+      border: 1px solid var(--border-color);
+      padding: 0.4rem 0.5rem;
+      text-align: left;
+    }
+
+    .assign-table th {
+      background: #f1f3f5;
+      font-weight: 600;
+    }
+
+    .assign-table select,
+    .assign-table input {
+      font-size: var(--font-size-sm);
+      padding: 0.25rem 0.4rem;
+    }
+
+    .debate-progress-banner {
+      padding: var(--spacing-3);
+      border-radius: var(--border-radius);
+      border: 2px solid var(--border-color);
+      background: #fff;
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .debate-progress-banner.active-gov { border-color: var(--gov-color); background: #fffafa; }
+    .debate-progress-banner.active-opp { border-color: var(--opp-color); background: #f8fbff; }
+
+    .debate-timer {
+      font-size: 1.75rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .side-gov { color: var(--gov-color); font-weight: 700; }
+    .side-opp { color: var(--opp-color); font-weight: 700; }
+
     @keyframes btnSpin {
       to { transform: rotate(360deg); }
     }
@@ -446,6 +562,22 @@
     }
 
     #chat {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-3);
+      font-family: var(--font-family-english);
+      font-size: var(--font-size-lg);
+      line-height: var(--line-height-base);
+      letter-spacing: .01em;
+      padding: var(--spacing-3);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      min-height: 250px;
+      background: #fdfdfd;
+      scroll-behavior: smooth;
+    }
+
+    #debateChat {
       display: flex;
       flex-direction: column;
       gap: var(--spacing-3);
@@ -794,7 +926,9 @@
     textarea,
     select,
     #chat,
-    #chat * {
+    #chat *,
+    #debateChat,
+    #debateChat * {
       -webkit-user-select: text;
       user-select: text;
       -webkit-touch-callout: default;
@@ -836,7 +970,7 @@
     <!-- Toolbar -->
     <div class="toolbar">
       <div class="toolbar-left">
-        <h1>AI英会話</h1>
+        <h1 id="appTitle">AI英会話</h1>
         <span id="identStatus" class="pill">未確定</span>
       </div>
       <div class="toolbar-right">
@@ -849,6 +983,12 @@
         <button id="btnLogoutToolbar" class="btn-secondary hidden">ログアウト</button>
         <button id="btnDiagnose" class="btn-secondary" title="GAS接続の診断">接続診断</button>
       </div>
+    </div>
+
+    <!-- モード切替 -->
+    <div class="mode-tabs hidden" id="modeTabsArea" role="tablist">
+      <button type="button" class="mode-tab active" id="modeTabConv" role="tab">AI英会話</button>
+      <button type="button" class="mode-tab" id="modeTabDebate" role="tab">パーラメンタリーディベート</button>
     </div>
     <!-- バグ特定用：診断パネル（?debug=1 で表示） -->
     <div id="diagnosePanel" class="card hidden" style="background:var(--bg-secondary);font-family:monospace;font-size:0.75rem;">
@@ -937,8 +1077,105 @@
       </div>
     </div>
 
-    <!-- Setup -->
-    <div class="card">
+    <!-- ディベート設定 -->
+    <div class="card debate-mode-panel hidden" id="debateSetupCard">
+      <h2>ディベート設定</h2>
+      <div class="grid-2">
+        <div>
+          <label for="debateBookSelect">ブック</label>
+          <select id="debateBookSelect"></select>
+        </div>
+        <div>
+          <label for="debateUnitSelect">単元（シート）</label>
+          <select id="debateUnitSelect"></select>
+        </div>
+      </div>
+      <div>
+        <label for="debateSetSelect">ディベートセット</label>
+        <select id="debateSetSelect"></select>
+      </div>
+      <div>
+        <label for="debateMotionDisplay">議題（Motion）</label>
+        <textarea id="debateMotionDisplay" readonly></textarea>
+      </div>
+      <div>
+        <label for="debateDisplayText">あなたへの指示</label>
+        <textarea id="debateDisplayText" readonly></textarea>
+      </div>
+      <div>
+        <label>スピーチ担当割当</label>
+        <button type="button" id="btnFillMyName" class="btn-secondary" style="width:auto;margin-bottom:.5rem;">ログイン名を肯定派に一括設定</button>
+        <div style="overflow-x:auto;">
+          <table class="assign-table" id="assignTable">
+            <thead>
+              <tr><th>順</th><th>役割</th><th>側</th><th>担当</th><th>氏名</th></tr>
+            </thead>
+            <tbody id="assignTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ディベート進行 -->
+    <div class="card debate-mode-panel hidden" id="debateProgressCard">
+      <h2>ディベート進行</h2>
+      <div id="debateProgressBanner" class="debate-progress-banner">
+        <div id="debateCurrentSpeech">—</div>
+        <div id="debateCurrentAssignee">—</div>
+        <div class="debate-timer" id="debateTimer">—:——</div>
+      </div>
+      <div class="chat-tools" style="margin:.75rem 0 .5rem;">
+        <select id="debateAiRate" class="rateSelect" title="AI TTS再生速度">
+          <option value="0.6">0.6x</option>
+          <option value="0.7">0.7x</option>
+          <option value="0.8">0.8x</option>
+          <option value="0.9">0.9x</option>
+          <option value="1.0" selected>1.0x</option>
+          <option value="1.2">1.2x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2.0">2.0x</option>
+        </select>
+        <span class="small">※ AI発言の読み上げ速度（セット既定値で自動設定）</span>
+      </div>
+      <div>
+        <label for="debateChat">スピーチログ</label>
+        <div id="debateChat"></div>
+      </div>
+    </div>
+
+    <!-- ディベート発話 -->
+    <div class="card debate-mode-panel hidden" id="debateInputCard">
+      <h2>あなたのスピーチ</h2>
+      <div>
+        <label>音声認識・発話</label>
+        <div class="input-row">
+          <button id="btnDebateRecToggle" class="btn-secondary btn-icon rec-btn" title="音声認識 開始/停止" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 14 0h-2zM11 19h2v3h-2z" />
+            </svg>
+            <span class="rec-label">開始</span>
+          </button>
+          <div id="debateRecStatusBox" class="recbox" role="status">
+            <div class="recbox-left"><span id="debateRecStateText">停止中</span></div>
+          </div>
+          <button id="btnDebateSend" class="btn-primary send-btn" style="flex:2;">
+            <span>スピーチ送信</span>
+          </button>
+        </div>
+      </div>
+      <div>
+        <label for="debateUserInput">入力（音声認識 / 手入力）</label>
+        <textarea id="debateUserInput" placeholder="Speak or type your speech..."></textarea>
+      </div>
+      <div class="phase-row">
+        <button id="btnDebatePhase" class="btn-danger">ディベート開始</button>
+        <button id="btnDebatePrepDone" class="btn-warning hidden">作戦タイム完了</button>
+        <button id="btnDebateRestart" class="btn-secondary">同じ設定で最初から</button>
+      </div>
+    </div>
+
+    <!-- Setup (英会話) -->
+    <div class="card conv-mode-panel" id="convSetupCard">
       <h2>学習設定</h2>
       <div class="grid-2">
         <div>
@@ -997,8 +1234,8 @@
       </div>
     </div>
 
-    <!-- Conversation -->
-    <div class="card">
+    <!-- Conversation (英会話) -->
+    <div class="card conv-mode-panel" id="convChatCard">
       <h2>会話</h2>
       <div>
         <label for="chat">チャット</label>
@@ -1009,6 +1246,9 @@
             <option value="0.8">0.8x</option>
             <option value="0.7">0.7x</option>
             <option value="0.6">0.6x</option>
+            <option value="1.2">1.2x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2.0">2.0x</option>
           </select>
           <span class="small">※ 各AI吹き出し「▶」で個別再生 ／ 初期は非表示（「表示」で展開）</span>
         </div>
@@ -1016,8 +1256,8 @@
       </div>
     </div>
 
-    <!-- Input -->
-    <div class="card">
+    <!-- Input (英会話) -->
+    <div class="card conv-mode-panel" id="convInputCard">
       <div class="header-row">
         <h2 style="margin:0;">あなたの発話</h2>
         <div class="right">
@@ -1113,6 +1353,44 @@
     let phase = 'start';               // 'start' -> 'feedback' -> 'submit' -> 'done'
     let firstUserSent = false;         // 最初のセリフ（参考）を消す判定
     let roleLockedToA = false;         // ★ 役割ロック（AI=A固定）
+
+    // ========= ディベート =========
+    let appMode = 'conversation'; // 'conversation' | 'debate'
+    let debateBooks = [], debateUnits = [], debateSets = [];
+    let debateBook = null, debateUnit = null, debateRow = null;
+    let debateAssignments = [];
+    let debateMessages = [];
+    let debatePhase = 'setup'; // setup | running | prep | judge | submit | done
+    let debateStepIndex = 0;
+    let debateVerdict = null;
+    let debateHasSubmitted = false;
+    let debateSelectorsFrozen = false;
+    let debateTimerId = null, debateTimerEnd = 0;
+
+    const DEBATE_FLOW = [
+      { id: 'PM', side: 'gov', label: 'Prime Minister', sideJa: '肯定派', secKey: 'pmSec' },
+      { id: 'LO', side: 'opp', label: 'Leader of Opposition', sideJa: '否定派', secKey: 'loSec' },
+      { id: 'PREP1', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep1Sec' },
+      { id: 'MG', side: 'gov', label: 'Member of Government', sideJa: '肯定派', secKey: 'mgSec' },
+      { id: 'MO', side: 'opp', label: 'Member of Opposition', sideJa: '否定派', secKey: 'moSec' },
+      { id: 'PREP2', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep2Sec' },
+      { id: 'OR', side: 'opp', label: 'Opposition Reply', sideJa: '否定派', secKey: 'orSec' },
+      { id: 'GR', side: 'gov', label: 'Government Reply', sideJa: '肯定派', secKey: 'grSec' }
+    ];
+
+    function clampTtsRate(v) {
+      const n = parseFloat(v);
+      if (isNaN(n)) return 1.0;
+      return Math.max(0.6, Math.min(2.0, n));
+    }
+
+    function getActiveTextInput() {
+      return appMode === 'debate' ? el('debateUserInput') : userInput;
+    }
+
+    function getActiveTtsRateSelect() {
+      return appMode === 'debate' ? el('debateAiRate') : el('aiRate');
+    }
 
     // TTS⇄STT 連携
     let _resumeRecAfterTTS = false;
@@ -1307,6 +1585,12 @@
           return callGAS('submit_identity', args[0] || {});
         case 'getAccessProfile':
           return callGAS('get_user_profile', { email: args[0] || '' });
+        case 'listDebateBooksCached':
+          return callGAS('list_debate_books', { forceUpdate: args[0] });
+        case 'listDebateUnitsCached':
+          return callGAS('list_debate_units', { spreadsheetId: args[0], forceUpdate: args[1] });
+        case 'listDebateSetsCached':
+          return callGAS('list_debate_sets', { spreadsheetId: args[0], sheetName: args[1], forceUpdate: args[2] });
         default:
           throw new Error('Unknown action: ' + fnName);
       }
@@ -1330,7 +1614,7 @@
         withSuccessHandler(fn) { state.success = fn; return runner; },
         withFailureHandler(fn) { state.failure = fn; return runner; }
       };
-      ['listThemeBooksCached', 'listThemeUnitsCached', 'listThemeProblemsCached', 'startConversation', 'continueConversation', 'getFeedback', 'submitTask', 'submitIdentityConfirmation', 'getAccessProfile'].forEach(fnName => {
+      ['listThemeBooksCached', 'listThemeUnitsCached', 'listThemeProblemsCached', 'startConversation', 'continueConversation', 'getFeedback', 'submitTask', 'submitIdentityConfirmation', 'getAccessProfile', 'listDebateBooksCached', 'listDebateUnitsCached', 'listDebateSetsCached'].forEach(fnName => {
         runner[fnName] = async (...args) => {
           try {
             const res = await gasAction(fnName, args);
@@ -1517,9 +1801,12 @@
       identPanel.classList.add('hidden');
       const btnLogoutToolbar = el('btnLogoutToolbar');
       if (btnLogoutToolbar) btnLogoutToolbar.classList.remove('hidden');
+      const modeTabs = el('modeTabsArea');
+      if (modeTabs) modeTabs.classList.remove('hidden');
       document.querySelectorAll('.card.hidden, #status.hidden').forEach(c => {
         if (c.id !== 'identPanel' && c.id !== 'diagnosePanel') c.classList.remove('hidden');
       });
+      applyAppModeVisibility();
       const statusEl = el('status');
       if (statusEl) statusEl.classList.remove('hidden');
     }
@@ -1621,6 +1908,9 @@
           updateUI();
         }
       }
+      if (!configNotSet() && debateBooks.length === 0) {
+        loadDebateBooks(false);
+      }
     }
 
     async function onAuthLoginSubmit(e) {
@@ -1679,6 +1969,10 @@
       refreshIdentityBadges();
       const btnLogoutToolbar = el('btnLogoutToolbar');
       if (btnLogoutToolbar) btnLogoutToolbar.classList.add('hidden');
+      const modeTabs = el('modeTabsArea');
+      if (modeTabs) modeTabs.classList.add('hidden');
+      appMode = 'conversation';
+      applyAppModeVisibility();
       if (isClientLocked()) {
         showLockScreen();
       } else {
@@ -1829,6 +2123,7 @@
         setAuthTabsDisabled(false);
       }
       updateUI();
+      updateDebateUI();
     }
 
     function showAiThinking(label) {
@@ -1867,7 +2162,7 @@
       await beginTTS(true); scrollToBottomIfEnabled();
       b.play.classList.add('is-speaking'); b.play.setAttribute('aria-pressed', 'true'); b.play.disabled = true; b.toggle.disabled = true;
       const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0];
-      const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0;
+      const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
       currentUtterance = u; // ★ GC対策
       speakingNow = true; updateUI();
       const cleanup = () => { currentUtterance = null; b.play.classList.remove('is-speaking'); b.play.setAttribute('aria-pressed', 'false'); b.play.disabled = false; b.toggle.disabled = false; speakingNow = false; updateUI(); endTTS(); };
@@ -1897,9 +2192,10 @@
     function initRecognition() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { statusRun('STT (音声認識) はサポートされていません。'); recToggleBtn.disabled = true; return; } rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true; rec.onstart = () => { recognizing = true; setRecUIRecording(true); }; rec.onend = () => { recognizing = false; setRecUIRecording(false); stopAudioViz(); }; rec.onerror = e => { if (e.error !== 'no-speech' && e.error !== 'audio-capture') { statusSubmit('音声認識エラー: ' + e.error, true); } recognizing = false; setRecUIRecording(false); stopAudioViz(); };
       rec.onresult = e => {
-        if (userInput.disabled) return;
-        if (Date.now() - ttsEndTime < 500) return; // TTS終了直後の入力は無視（エコー対策）
-        let finalText = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; } if (finalText) { const norm = normalizeFinalUtterance(finalText); if (userInput.value && !/\s$/.test(userInput.value)) userInput.value += ' '; userInput.value += norm; updateUI(); }
+        const inp = getActiveTextInput();
+        if (!inp || inp.disabled) return;
+        if (Date.now() - ttsEndTime < 500) return;
+        let finalText = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; } if (finalText) { const norm = normalizeFinalUtterance(finalText); if (inp.value && !/\s$/.test(inp.value)) inp.value += ' '; inp.value += norm; updateUI(); updateDebateUI(); }
       }
     }
     function toggleRecognition() { recognizing ? stopRecognition() : startRecognition(); }
@@ -1921,16 +2217,20 @@
 
     /* ========= TTS：速度コントロール維持 ========= */
     function populateVoicesUSGB() { const list = window.speechSynthesis.getVoices() || []; voices = list.filter(v => /^en-(US|GB)/i.test(v.lang)); voiceReady = voices.length > 0; voiceSelect.innerHTML = ''; if (!voiceReady) { const o = document.createElement('option'); o.textContent = '（TTS非対応）'; voiceSelect.appendChild(o); return; } voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; voiceSelect.appendChild(o); }); voiceSelect.selectedIndex = 0; }
-    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(true); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
+    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(true); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); updateDebateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
     async function speakGuarded(text, after) { await addAssistantBubbleWithAutoTTS(text); if (typeof after === 'function') after(); }
 
     /* ========= TTSとSTTの連携 ========= */
     function stopRecognitionAndWait(waitMs = TTS_STOP_WAIT_MS) { return new Promise(resolve => { const after = () => setTimeout(resolve, waitMs); if (rec && recognizing) { const prevOnEnd = rec.onend; rec.onend = (e) => { try { if (prevOnEnd) prevOnEnd(e); } catch (_) { } recognizing = false; setRecUIRecording(false); stopAudioViz(); rec.onend = prevOnEnd; after(); }; try { rec.stop(); } catch (_) { after(); } } else { after(); } }); }
     async function beginTTS(enableResume) {
-      // 入力ブロック開始
+      const inp = getActiveTextInput();
+      if (inp) {
+        inp.disabled = true;
+        inp.dataset.originalPlaceholder = inp.placeholder;
+        inp.placeholder = 'AIが発話中...';
+      }
       userInput.disabled = true;
-      userInput.dataset.originalPlaceholder = userInput.placeholder;
-      userInput.placeholder = 'AIが発話中...';
+      if (el('debateUserInput')) el('debateUserInput').disabled = true;
 
       // マイクミュート（Safety: Hardware/Visual）
       if (micStream) {
@@ -1947,21 +2247,31 @@
     }
 
     function endTTS() {
-      // 入力ブロック解除
-      userInput.disabled = false;
-      if (userInput.dataset.originalPlaceholder) {
-        userInput.placeholder = userInput.dataset.originalPlaceholder;
+      const inp = getActiveTextInput();
+      if (inp) {
+        inp.disabled = false;
+        if (inp.dataset.originalPlaceholder) {
+          inp.placeholder = inp.dataset.originalPlaceholder;
+        }
+        if (appMode === 'debate' && debatePhase === 'running') inp.focus();
+        else if (appMode === 'conversation') userInput.focus();
       }
-      userInput.focus();
+      userInput.disabled = false;
+      updateDebateUI();
 
-      const shouldResume = _resumeRecAfterTTS && phase !== 'done';
+      const shouldResume = _resumeRecAfterTTS && (
+        (appMode === 'conversation' && phase !== 'done') ||
+        (appMode === 'debate' && debatePhase === 'running')
+      );
       _resumeRecAfterTTS = false;
-      ttsEndTime = Date.now(); // 終了時刻記録
+      ttsEndTime = Date.now();
       if (shouldResume) {
         setTimeout(() => {
           if (rec && !recognizing) startRecognition();
         }, TTS_TAIL_BUFFER_MS);
       }
+      updateUI();
+      updateDebateUI();
     }
 
     /* ========= 役割・ラベル ========= */
@@ -2199,6 +2509,565 @@
     function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = getEffectiveUserRole(); const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
     async function tryShowClipboard(txt) { if (!txt) return; await new Promise(r => setTimeout(r, 500)); const ok = window.confirm('このやりとりとフィードバックの文字情報をコピー＆ペーストしますか？'); if (ok) { try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); } else { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); } statusSubmit('会話＋フィードバックをクリップボードにコピーしました。', false); } catch (_) { } } }
 
+    /* ========= ディベートモード ========= */
+    function getDebateFlowStep(idx) { return DEBATE_FLOW[idx] || null; }
+
+    function getDefaultDebateAssignments() {
+      const name = gIdentity.name || (gIdentity.email ? gIdentity.email.split('@')[0] : 'Student');
+      const speechIds = ['PM', 'LO', 'MG', 'MO', 'OR', 'GR'];
+      return speechIds.map(id => {
+        const step = DEBATE_FLOW.find(s => s.id === id);
+        const isGov = step && step.side === 'gov';
+        return {
+          speechId: id,
+          side: step ? step.side : 'gov',
+          assigneeType: isGov ? 'human' : 'ai',
+          speakerName: isGov ? name : 'AI'
+        };
+      });
+    }
+
+    function readAssignmentsFromTable() {
+      const tbody = el('assignTableBody');
+      if (!tbody) return [];
+      return Array.from(tbody.querySelectorAll('tr')).map(tr => ({
+        speechId: tr.dataset.speechId,
+        side: tr.dataset.side,
+        assigneeType: tr.querySelector('.assign-type')?.value || 'ai',
+        speakerName: (tr.querySelector('.assign-name')?.value || '').trim() || (tr.querySelector('.assign-type')?.value === 'ai' ? 'AI' : '')
+      }));
+    }
+
+    function renderAssignmentTable() {
+      const tbody = el('assignTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      let order = 0;
+      DEBATE_FLOW.forEach(step => {
+        if (step.type === 'prep') {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${++order}</td><td colspan="2">${step.label}</td><td colspan="2" class="small">タイマーのみ</td>`;
+          tbody.appendChild(tr);
+          return;
+        }
+        const a = debateAssignments.find(x => x.speechId === step.id) || { assigneeType: 'ai', speakerName: 'AI' };
+        const tr = document.createElement('tr');
+        tr.dataset.speechId = step.id;
+        tr.dataset.side = step.side;
+        tr.innerHTML = `
+          <td>${++order}</td>
+          <td>${step.id}: ${step.label}</td>
+          <td class="${step.side === 'gov' ? 'side-gov' : 'side-opp'}">${step.sideJa}</td>
+          <td><select class="assign-type" ${debateSelectorsFrozen ? 'disabled' : ''}>
+            <option value="human" ${a.assigneeType === 'human' ? 'selected' : ''}>人間</option>
+            <option value="ai" ${a.assigneeType === 'ai' ? 'selected' : ''}>AI</option>
+          </select></td>
+          <td><input type="text" class="assign-name" value="${(a.speakerName || '').replace(/"/g, '&quot;')}" placeholder="氏名" ${debateSelectorsFrozen ? 'disabled' : ''}></td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function fillMyNameToGov() {
+      const name = gIdentity.name || (gIdentity.email ? gIdentity.email.split('@')[0] : '');
+      if (!name) { statusSubmit('ログイン名が取得できません', true); return; }
+      debateAssignments = getDefaultDebateAssignments();
+      renderAssignmentTable();
+    }
+
+    function applyAppModeVisibility() {
+      el('modeTabConv').classList.toggle('active', appMode === 'conversation');
+      el('modeTabDebate').classList.toggle('active', appMode === 'debate');
+      el('appTitle').textContent = appMode === 'debate' ? 'パーラメンタリーディベート' : 'AI英会話';
+      document.querySelectorAll('.conv-mode-panel').forEach(n => n.classList.toggle('hidden', appMode !== 'conversation'));
+      document.querySelectorAll('.debate-mode-panel').forEach(n => n.classList.toggle('hidden', appMode !== 'debate'));
+    }
+
+    function switchAppMode(mode) {
+      if (busy) return;
+      if (appMode === mode) return;
+      const inProgress = (appMode === 'conversation' && hasStarted && !hasSubmitted && phase !== 'start') ||
+        (appMode === 'debate' && debatePhase !== 'setup' && debatePhase !== 'done');
+      if (inProgress && !window.confirm('進行中のセッションがあります。モードを切り替えるとリセットされます。よろしいですか？')) return;
+      appMode = mode;
+      const footer = el('afterSubmitLink');
+      if (footer && mode === 'debate') footer.classList.add('hidden');
+      if (mode === 'debate') {
+        restartDebateSameSelection();
+        if (isLoggedIn() && debateBooks.length === 0) loadDebateBooks(false);
+      } else {
+        restartSameSelection();
+      }
+      applyAppModeVisibility();
+      updateUI();
+      updateDebateUI();
+    }
+
+    function updateDebateBooks(data) {
+      const list = Array.isArray(data) ? data : (data && data.books ? data.books : []);
+      debateBooks = list || [];
+      const sel = el('debateBookSelect');
+      sel.innerHTML = '';
+      debateBooks.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b.id; o.textContent = b.name;
+        sel.appendChild(o);
+      });
+      if (debateBooks.length) {
+        sel.selectedIndex = 0;
+        debateBook = debateBooks[0];
+        onDebateBookChange();
+      }
+    }
+
+    async function loadDebateBooks(force) {
+      try {
+        const res = await callGAS('list_debate_books', { forceUpdate: !!force });
+        updateDebateBooks(res || []);
+      } catch (err) {
+        statusSubmit(err.message || String(err), true);
+      }
+    }
+
+    function onDebateBookChange() {
+      debateBook = debateBooks.find(b => b.id === el('debateBookSelect').value) || null;
+      el('debateUnitSelect').innerHTML = '';
+      el('debateSetSelect').innerHTML = '';
+      debateRow = null;
+      if (!debateBook) return;
+      setBusy(true);
+      google.script.run.withSuccessHandler(updateDebateUnits).withFailureHandler(err => {
+        setBusy(false); statusSubmit(err.message, true);
+      }).listDebateUnitsCached(debateBook.id, forceFetch);
+    }
+
+    function updateDebateUnits(data) {
+      setBusy(false);
+      debateUnits = data || [];
+      const sel = el('debateUnitSelect');
+      sel.innerHTML = '';
+      debateUnits.forEach(u => {
+        const o = document.createElement('option'); o.value = u; o.textContent = u;
+        sel.appendChild(o);
+      });
+      if (debateUnits.length) {
+        debateUnit = debateUnits[0];
+        onDebateUnitChange();
+      }
+    }
+
+    function onDebateUnitChange() {
+      debateUnit = el('debateUnitSelect').value || null;
+      el('debateSetSelect').innerHTML = '';
+      debateRow = null;
+      if (!debateBook || !debateUnit) return;
+      setBusy(true);
+      google.script.run.withSuccessHandler(updateDebateSets).withFailureHandler(err => {
+        setBusy(false); statusSubmit(err.message, true);
+      }).listDebateSetsCached(debateBook.id, debateUnit, forceFetch);
+    }
+
+    function updateDebateSets(data) {
+      setBusy(false);
+      debateSets = data || [];
+      const sel = el('debateSetSelect');
+      sel.innerHTML = '';
+      debateSets.forEach(p => {
+        const o = document.createElement('option');
+        o.value = p.rowIndex;
+        o.textContent = `${p.serial || p.rowIndex}. ${p.title}`;
+        sel.appendChild(o);
+      });
+      if (debateSets.length) {
+        sel.selectedIndex = 0;
+        debateRow = debateSets[0];
+        onDebateSetChange();
+      }
+      forceFetch = false;
+    }
+
+    function onDebateSetChange() {
+      debateRow = debateSets.find(p => p.rowIndex == el('debateSetSelect').value) || null;
+      if (!debateRow) return;
+      el('debateMotionDisplay').value = debateRow.motion || '';
+      el('debateDisplayText').value = debateRow.displayText || '';
+      const rate = clampTtsRate(debateRow.aiTtsRate);
+      el('debateAiRate').value = String(rate);
+      if (!debateAssignments.length) debateAssignments = getDefaultDebateAssignments();
+      renderAssignmentTable();
+      updateDebateUI();
+    }
+
+    function debateUiLabel(meta) {
+      const step = DEBATE_FLOW.find(s => s.id === meta.speechId);
+      const sideJa = step ? step.sideJa : (meta.side === 'gov' ? '肯定派' : '否定派');
+      const who = meta.assigneeType === 'human' ? ('人間 · ' + (meta.speakerName || '—')) : 'AI';
+      return `${meta.speechId}（${sideJa}）· ${who}`;
+    }
+
+    function addDebateBubble(content, meta) {
+      const div = document.createElement('div');
+      const sideClass = meta.side === 'gov' ? 'debate-gov' : 'debate-opp';
+      div.className = 'msg ' + sideClass;
+      const label = document.createElement('span');
+      label.className = 'debate-meta-label';
+      label.textContent = debateUiLabel(meta);
+      const body = document.createElement('span');
+      body.className = 'msg-body';
+      body.textContent = content;
+      div.appendChild(label);
+      div.appendChild(body);
+      if (meta.assigneeType === 'ai') {
+        const actions = document.createElement('div');
+        actions.className = 'bubble-actions';
+        actions.style.marginTop = '.35rem';
+        const play = document.createElement('button');
+        play.className = 'playBtn';
+        play.textContent = '▶';
+        play.onclick = () => speak(content);
+        actions.appendChild(play);
+        div.appendChild(actions);
+      }
+      el('debateChat').appendChild(div);
+      el('debateChat').scrollTop = el('debateChat').scrollHeight;
+    }
+
+    function addDebateSystemMsg(text) {
+      const div = document.createElement('div');
+      div.className = 'msg debate-prep system';
+      div.textContent = text;
+      el('debateChat').appendChild(div);
+      el('debateChat').scrollTop = el('debateChat').scrollHeight;
+    }
+
+    function clearDebateTimer() {
+      if (debateTimerId) { clearInterval(debateTimerId); debateTimerId = null; }
+    }
+
+    function startDebateTimer(seconds) {
+      clearDebateTimer();
+      debateTimerEnd = Date.now() + seconds * 1000;
+      const tick = () => {
+        const left = Math.max(0, Math.ceil((debateTimerEnd - Date.now()) / 1000));
+        const m = Math.floor(left / 60);
+        const s = left % 60;
+        el('debateTimer').textContent = `${m}:${String(s).padStart(2, '0')}`;
+        if (left <= 0) clearDebateTimer();
+      };
+      tick();
+      debateTimerId = setInterval(tick, 500);
+    }
+
+    function getCurrentDebateAssignment() {
+      const step = getDebateFlowStep(debateStepIndex);
+      if (!step || step.type === 'prep') return null;
+      return debateAssignments.find(a => a.speechId === step.id) || null;
+    }
+
+    function updateDebateProgressBanner() {
+      const step = getDebateFlowStep(debateStepIndex);
+      const banner = el('debateProgressBanner');
+      if (!step) {
+        el('debateCurrentSpeech').textContent = '—';
+        el('debateCurrentAssignee').textContent = '—';
+        return;
+      }
+      banner.classList.remove('active-gov', 'active-opp');
+      if (step.type === 'prep') {
+        el('debateCurrentSpeech').textContent = step.label;
+        el('debateCurrentAssignee').textContent = '準備中（発話不可）';
+        el('debateTimer').textContent = '—';
+        return;
+      }
+      banner.classList.add(step.side === 'gov' ? 'active-gov' : 'active-opp');
+      const assign = getCurrentDebateAssignment();
+      el('debateCurrentSpeech').textContent = `${step.id}: ${step.label}（${step.sideJa}）`;
+      if (assign) {
+        const who = assign.assigneeType === 'human' ? `人間 · ${assign.speakerName || '—'}` : 'AI';
+        el('debateCurrentAssignee').textContent = `担当: ${who}`;
+      } else el('debateCurrentAssignee').textContent = '—';
+      const sec = debateRow ? (debateRow[step.secKey] || 120) : 120;
+      if (debatePhase === 'running' || debatePhase === 'prep') startDebateTimer(sec);
+    }
+
+    function updateDebatePhaseButton() {
+      const btn = el('btnDebatePhase');
+      const prepBtn = el('btnDebatePrepDone');
+      btn.classList.remove('btn-danger', 'btn-warning', 'btn-success', 'btn-primary');
+      prepBtn.classList.add('hidden');
+      btn.disabled = busy || !isLoggedIn() || configNotSet();
+      if (debatePhase === 'setup') {
+        btn.textContent = 'ディベート開始';
+        btn.classList.add('btn-danger');
+      } else if (debatePhase === 'prep') {
+        btn.textContent = '作戦タイム中…';
+        btn.classList.add('btn-warning');
+        btn.disabled = true;
+        prepBtn.classList.remove('hidden');
+        prepBtn.disabled = busy;
+      } else if (debatePhase === 'running') {
+        btn.textContent = '進行中…';
+        btn.classList.add('btn-primary');
+        btn.disabled = true;
+      } else if (debatePhase === 'judge') {
+        btn.textContent = '判定中…';
+        btn.classList.add('btn-warning');
+        btn.disabled = true;
+      } else if (debatePhase === 'submit') {
+        btn.textContent = '提出（忘れずに）';
+        btn.classList.add('btn-success');
+        btn.disabled = busy || debateHasSubmitted;
+      } else {
+        btn.textContent = '提出完了';
+        btn.classList.add('btn-primary');
+        btn.disabled = true;
+      }
+    }
+
+    function updateDebateUI() {
+      if (appMode !== 'debate') return;
+      const authLocked = !isLoggedIn();
+      const running = debatePhase !== 'setup' && debatePhase !== 'done';
+      el('debateBookSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
+      el('debateUnitSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
+      el('debateSetSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
+      el('btnFillMyName').disabled = busy || debateSelectorsFrozen || running || authLocked;
+      const step = getDebateFlowStep(debateStepIndex);
+      const assign = getCurrentDebateAssignment();
+      const isHumanTurn = debatePhase === 'running' && assign && assign.assigneeType === 'human';
+      const isPrep = debatePhase === 'prep';
+      const inp = el('debateUserInput');
+      inp.disabled = busy || !isHumanTurn || isPrep || debatePhase === 'judge' || debatePhase === 'submit' || debatePhase === 'done';
+      el('btnDebateSend').disabled = busy || !isHumanTurn || isPrep || !(inp.value || '').trim();
+      el('btnDebateRecToggle').disabled = busy || !isHumanTurn || isPrep || speakingNow;
+      updateDebatePhaseButton();
+      updateDebateProgressBanner();
+    }
+
+    async function startDebateFlow() {
+      if (busy || !isLoggedIn() || !debateBook || !debateUnit || !debateRow) return;
+      debateAssignments = readAssignmentsFromTable();
+      debateMessages = [];
+      debateVerdict = null;
+      debateHasSubmitted = false;
+      el('debateChat').innerHTML = '';
+      debateStepIndex = 0;
+      debateSelectorsFrozen = true;
+      renderAssignmentTable();
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nディベートを開始します。`);
+      debatePhase = 'running';
+      updateDebateUI();
+      await advanceDebateStep();
+    }
+
+    async function advanceDebateStep() {
+      if (debateStepIndex >= DEBATE_FLOW.length) {
+        await runDebateJudge();
+        return;
+      }
+      const step = getDebateFlowStep(debateStepIndex);
+      if (!step) { debateStepIndex++; return advanceDebateStep(); }
+
+      if (step.type === 'prep') {
+        debatePhase = 'prep';
+        addDebateSystemMsg(`⏳ ${step.label}（${debateRow[step.secKey] || 60}秒）`);
+        updateDebateUI();
+        return;
+      }
+
+      debatePhase = 'running';
+      const assign = getCurrentDebateAssignment();
+      updateDebateUI();
+      if (!assign) { debateStepIndex++; return advanceDebateStep(); }
+
+      if (assign.assigneeType === 'ai') {
+        setBusy(true, 'AIスピーチ生成中…');
+        try {
+          const text = await callGAS('generate_debate_speech', {
+            row: debateRow,
+            speechId: step.id,
+            side: step.side,
+            messages: debateMessages
+          });
+          const meta = {
+            speechId: step.id,
+            side: step.side,
+            assigneeType: 'ai',
+            speakerName: 'AI',
+            displayLabel: step.label
+          };
+          debateMessages.push({ role: 'assistant', content: text, meta: meta });
+          addDebateBubble(text, meta);
+          await speakGuardedDebate(text);
+        } catch (err) {
+          statusSubmit(err.message, true);
+        } finally {
+          setBusy(false);
+          debateStepIndex++;
+          updateDebateUI();
+          await advanceDebateStep();
+        }
+      } else {
+        statusRun(`${assign.speakerName || '人間'} のスピーチを入力してください（${step.label}）`);
+        el('debateUserInput').focus();
+        updateDebateUI();
+      }
+    }
+
+    async function speakGuardedDebate(text) {
+      if (!('speechSynthesis' in window) || !voiceReady || !text) return;
+      await beginTTS(true);
+      scrollToBottomIfEnabled();
+      return new Promise(resolve => {
+        const vname = voiceSelect.value;
+        const v = voices.find(x => x.name === vname) || voices[0];
+        const u = new SpeechSynthesisUtterance(text);
+        u.voice = v;
+        u.lang = v.lang;
+        u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
+        currentUtterance = u;
+        speakingNow = true;
+        updateUI();
+        updateDebateUI();
+        const done = () => {
+          currentUtterance = null;
+          speakingNow = false;
+          updateUI();
+          updateDebateUI();
+          endTTS();
+          resolve();
+        };
+        u.onend = done;
+        u.onerror = done;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      });
+    }
+
+    async function onDebateHumanSend() {
+      const step = getDebateFlowStep(debateStepIndex);
+      const assign = getCurrentDebateAssignment();
+      if (!step || step.type === 'prep' || !assign || assign.assigneeType !== 'human') return;
+      const text = (el('debateUserInput').value || '').trim();
+      if (!text || busy) return;
+      const meta = {
+        speechId: step.id,
+        side: step.side,
+        assigneeType: 'human',
+        speakerName: assign.speakerName || '',
+        displayLabel: step.label
+      };
+      debateMessages.push({ role: 'user', content: text, meta: meta });
+      addDebateBubble(text, meta);
+      el('debateUserInput').value = '';
+      stopRecognition();
+      debateStepIndex++;
+      statusRun('');
+      updateDebateUI();
+      await advanceDebateStep();
+    }
+
+    function onDebatePrepDone() {
+      if (debatePhase !== 'prep') return;
+      debateStepIndex++;
+      debatePhase = 'running';
+      advanceDebateStep();
+    }
+
+    async function runDebateJudge() {
+      debatePhase = 'judge';
+      updateDebateUI();
+      setBusy(true, 'ジャッジ判定中…');
+      try {
+        debateVerdict = await callGAS('judge_debate', { row: debateRow, messages: debateMessages });
+        const w = debateVerdict.winnerSide;
+        const wJa = w === 'gov' ? '肯定派の勝利' : (w === 'opp' ? '否定派の勝利' : '引き分け');
+        addDebateSystemMsg(`🏆 判定: ${wJa}\n\n${debateVerdict.verdictJa || ''}`);
+        statusSubmit(`判定完了: ${wJa}`, false);
+        debatePhase = 'submit';
+      } catch (err) {
+        statusSubmit(err.message, true);
+        debatePhase = 'submit';
+      } finally {
+        setBusy(false);
+        updateDebateUI();
+      }
+    }
+
+    async function onDebateSubmit() {
+      if (busy || debateHasSubmitted || !debateVerdict) return;
+      if (!isLoggedIn()) { statusSubmit('提出前にログインしてください', true); return; }
+      const ok = window.confirm('ディベート結果を提出します。よろしいですか？');
+      if (!ok) return;
+      setBusy(true, '提出中…');
+      debateHasSubmitted = true;
+      try {
+        const res = await callGAS('submit_debate', {
+          gIdentity: gIdentity,
+          bookName: debateBook.name,
+          unitName: debateUnit,
+          row: debateRow,
+          messages: debateMessages,
+          assignments: debateAssignments,
+          winnerSide: debateVerdict.winnerSide,
+          verdictJa: debateVerdict.verdictJa
+        });
+        statusSubmit('提出完了: ' + (res.fileName || ''), false);
+        debatePhase = 'done';
+      } catch (err) {
+        debateHasSubmitted = false;
+        statusSubmit('提出エラー: ' + err.message, true);
+      } finally {
+        setBusy(false);
+        updateDebateUI();
+      }
+    }
+
+    function onDebatePhaseClick() {
+      if (debatePhase === 'setup') return startDebateFlow();
+      if (debatePhase === 'submit') return onDebateSubmit();
+    }
+
+    function restartDebateSameSelection() {
+      try { window.speechSynthesis.cancel(); } catch (_) {}
+      stopRecognition();
+      clearDebateTimer();
+      debateMessages = [];
+      debateVerdict = null;
+      debateHasSubmitted = false;
+      debateSelectorsFrozen = false;
+      debateStepIndex = 0;
+      debatePhase = 'setup';
+      if (el('debateChat')) el('debateChat').innerHTML = '';
+      if (el('debateUserInput')) el('debateUserInput').value = '';
+      debateAssignments = getDefaultDebateAssignments();
+      renderAssignmentTable();
+      statusSubmit('');
+      statusRun('');
+      updateDebateUI();
+    }
+
+    async function refreshPageData() {
+      if (appMode === 'debate') {
+        forceFetch = true;
+        beginButtonLoading(btnRefresh, '更新中…');
+        setBusy(true, 'ディベートセットを更新中…');
+        try {
+          const res = await callGAS('list_debate_books', { forceUpdate: true });
+          updateDebateBooks(res || []);
+          statusRun('');
+        } catch (err) {
+          statusRun('ブック読み直しエラー：' + err.message);
+          statusSubmit(err.message, true);
+        } finally {
+          endButtonLoading(btnRefresh);
+          setBusy(false);
+          forceFetch = false;
+        }
+      } else {
+        await refreshThemesOnly();
+      }
+    }
+
     /* ========= リスタート ========= */
     function restartSameSelection() { try { window.speechSynthesis.cancel(); } catch (_) { } stopRecognition(); messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = false; preFBShown = false; selectorsFrozen = false; firstUserSent = false; statusSubmit(''); phase = 'start'; updatePhaseButton(); updateFirstLineHintForRole(); updateUI(); statusRun(''); }
     async function refreshThemesOnly() {
@@ -2255,7 +3124,25 @@
       userInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend('.'); } });
       userInput.addEventListener('input', updateUI);
       btnRecToggle.addEventListener('click', toggleRecognition);
-      btnRefresh.addEventListener('click', refreshThemesOnly);
+      const btnDebateRec = el('btnDebateRecToggle');
+      if (btnDebateRec) btnDebateRec.addEventListener('click', toggleRecognition);
+      btnRefresh.addEventListener('click', refreshPageData);
+      el('modeTabConv').addEventListener('click', () => switchAppMode('conversation'));
+      el('modeTabDebate').addEventListener('click', () => switchAppMode('debate'));
+      el('debateBookSelect').addEventListener('change', onDebateBookChange);
+      el('debateUnitSelect').addEventListener('change', onDebateUnitChange);
+      el('debateSetSelect').addEventListener('change', onDebateSetChange);
+      el('btnFillMyName').addEventListener('click', fillMyNameToGov);
+      el('btnDebatePhase').addEventListener('click', onDebatePhaseClick);
+      el('btnDebatePrepDone').addEventListener('click', onDebatePrepDone);
+      el('btnDebateRestart').addEventListener('click', restartDebateSameSelection);
+      el('btnDebateSend').addEventListener('click', onDebateHumanSend);
+      el('debateUserInput').addEventListener('input', updateDebateUI);
+      el('debateUserInput').addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDebateHumanSend(); }
+      });
+      debateAssignments = getDefaultDebateAssignments();
+      renderAssignmentTable();
       const btnDiagnose = el('btnDiagnose');
       if (btnDiagnose) btnDiagnose.addEventListener('click', runGASDiagnostic);
       if (GAS_DEBUG) { const p = el('diagnosePanel'); if (p) p.classList.remove('hidden'); }
@@ -2295,6 +3182,8 @@
         if (!configNotSet()) {
           const booksRes = await callGAS('list_books', { forceUpdate: false });
           updateBooks(booksRes || []);
+          const debateRes = await callGAS('list_debate_books', { forceUpdate: false });
+          updateDebateBooks(debateRes || []);
           cefr.value = 'A2';
           statusRun('');
         }
