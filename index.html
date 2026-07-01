@@ -1,0 +1,2303 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <base target="_top">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI英会話（半自動進行）</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+    rel="stylesheet">
+
+  <style>
+    :root {
+      /* Color Palette */
+      --primary-color: #007aff;
+      --primary-hover: #0056b3;
+      --success-color: #28a745;
+      --success-hover: #218838;
+      --danger-color: #dc3545;
+      --danger-hover: #c82333;
+      --warning-color: #ffc107;
+      --info-color: #17a2b8;
+
+      --bg-color: #f8f9fa;
+      --surface-color: #ffffff;
+      --text-color: #212529;
+      --text-color-muted: #6c757d;
+      --border-color: #dee2e6;
+
+      --ai-bubble-bg: #e9f5ff;
+      --user-bubble-bg: #f1f3f5;
+      --system-bubble-bg: #e9ecef;
+
+      /* Typography */
+      --font-family-base: 'Inter', 'Noto Sans JP', system-ui, -apple-system, sans-serif;
+      --font-family-english: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-size-base: 1rem;
+      --font-size-lg: 1.15rem;
+      --font-size-sm: 0.9rem;
+      --line-height-base: 1.6;
+
+      /* Sizing & Shadow */
+      --border-radius: 0.5rem;
+      --border-radius-pill: 9999px;
+      --spacing-1: 0.25rem;
+      --spacing-2: 0.5rem;
+      --spacing-3: 0.75rem;
+      --spacing-4: 1rem;
+      --spacing-5: 1.5rem;
+      --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.05);
+      --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+
+      /* States */
+      --focus-ring: 0 0 0 3px rgba(0, 122, 255, 0.25);
+      --speaking-ring: 0 0 0 3px rgba(0, 122, 255, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      font-size: 16px;
+    }
+
+    body {
+      font-family: var(--font-family-base);
+      color: var(--text-color);
+      background-color: var(--bg-color);
+      margin: 0;
+      padding: var(--spacing-4);
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 980px;
+      display: grid;
+      gap: var(--spacing-4);
+    }
+
+    /* --- Components --- */
+    .card {
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: var(--spacing-5);
+      background-color: var(--surface-color);
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      gap: var(--spacing-4);
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    h2 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      padding-bottom: var(--spacing-2);
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: var(--spacing-2);
+    }
+
+    label {
+      font-weight: 600;
+      display: block;
+      margin-bottom: var(--spacing-2);
+      font-size: var(--font-size-base);
+    }
+
+    select,
+    textarea,
+    input[type="text"],
+    input[type="email"],
+    input[type="password"] {
+      width: 100%;
+      font-size: var(--font-size-base);
+      font-family: var(--font-family-base);
+      padding: var(--spacing-3);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      background-color: #fff;
+      transition: border-color .2s, box-shadow .2s;
+    }
+
+    select:focus,
+    textarea:focus,
+    input[type="text"]:focus,
+    input[type="email"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: var(--primary-color);
+      box-shadow: var(--focus-ring);
+    }
+
+    textarea {
+      min-height: 120px;
+      line-height: var(--line-height-base);
+    }
+
+    button {
+      width: 100%;
+      font-size: var(--font-size-base);
+      font-family: var(--font-family-base);
+      font-weight: 600;
+      padding: var(--spacing-3) var(--spacing-4);
+      border: 1px solid transparent;
+      border-radius: var(--border-radius);
+      cursor: pointer;
+      transition: background-color .2s, border-color .2s, opacity .2s, box-shadow .2s;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    button:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
+    }
+
+    button:disabled,
+    select:disabled,
+    textarea:disabled,
+    input:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+      background-color: #e9ecef;
+      border-color: var(--border-color);
+      color: var(--text-color-muted);
+    }
+
+    button:disabled:hover {
+      background-color: #e9ecef;
+      border-color: var(--border-color);
+    }
+
+    /* Button Variants */
+    .btn-primary {
+      background-color: var(--primary-color);
+      color: #fff;
+    }
+
+    .btn-primary:not(:disabled):hover {
+      background-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background-color: var(--surface-color);
+      color: var(--primary-color);
+      border-color: var(--primary-color);
+    }
+
+    .btn-secondary:not(:disabled):hover {
+      background-color: #e9f5ff;
+    }
+
+    .btn-success {
+      background-color: var(--success-color);
+      color: #fff;
+    }
+
+    .btn-success:not(:disabled):hover {
+      background-color: var(--success-hover);
+    }
+
+    .btn-danger {
+      background-color: var(--danger-color);
+      color: #fff;
+    }
+
+    .btn-danger:not(:disabled):hover {
+      background-color: var(--danger-hover);
+    }
+
+    .btn-warning {
+      background-color: var(--warning-color);
+      color: #212529;
+    }
+
+    button.btn-loading {
+      position: relative;
+      pointer-events: none;
+      cursor: wait;
+      opacity: 0.88;
+    }
+
+    button.btn-loading .btn-loading-label {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+    }
+
+    button.btn-loading .btn-loading-label::before {
+      content: '';
+      display: inline-block;
+      width: 0.95em;
+      height: 0.95em;
+      border: 2px solid currentColor;
+      border-right-color: transparent;
+      border-radius: 50%;
+      animation: btnSpin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes btnSpin {
+      to { transform: rotate(360deg); }
+    }
+
+    .auth-tab:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .btn-warning:not(:disabled):hover {
+      filter: brightness(0.95);
+    }
+
+    .btn-icon {
+      width: auto;
+      font-size: 1rem;
+      padding: .4rem .6rem;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--spacing-4);
+      flex-wrap: wrap;
+    }
+
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-3);
+      flex-wrap: wrap;
+    }
+
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-2);
+    }
+
+    .toolbar-right button {
+      width: auto;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-4);
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--spacing-3);
+    }
+
+    .input-row {
+      display: flex;
+      gap: var(--spacing-2);
+      align-items: stretch;
+    }
+
+    /* Utility */
+    .small {
+      font-size: var(--font-size-sm);
+      color: var(--text-color-muted);
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .warn {
+      color: var(--danger-color);
+      font-weight: 500;
+    }
+
+    .stack {
+      display: grid;
+      gap: var(--spacing-2);
+    }
+
+    .auth-tabs {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.35rem;
+      background: #dee2e6;
+      border-radius: var(--border-radius);
+    }
+
+    .auth-tab {
+      flex: 1;
+      padding: 0.7rem 1rem;
+      border: 2px solid transparent;
+      border-radius: calc(var(--border-radius) - 2px);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: var(--font-size-base);
+      font-weight: 500;
+      color: #495057;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .auth-tab:hover:not(.active) {
+      background: rgba(255, 255, 255, 0.45);
+    }
+
+    .auth-tab.active {
+      background: var(--surface-color);
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      font-weight: 700;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+    }
+
+    .auth-tab-panel {
+      display: none;
+    }
+
+    .auth-tab-panel.active {
+      display: grid;
+      gap: var(--spacing-4);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: var(--spacing-1) var(--spacing-3);
+      border-radius: var(--border-radius-pill);
+      background: #f1f3f5;
+      border: 1px solid var(--border-color);
+      font-size: var(--font-size-sm);
+      font-weight: 500;
+      line-height: 1.4;
+    }
+
+    .pill-user {
+      color: var(--primary-color);
+      background: var(--ai-bubble-bg);
+      border-color: #bde0ff;
+      font-weight: 700;
+    }
+
+    #identStatus,
+    #identBadge {
+      font-weight: 600;
+      min-height: 28px;
+    }
+
+    /* Identity Panel */
+    #wl-ok b {
+      color: var(--success-color);
+    }
+
+    #wl-ng {
+      font-weight: 600;
+      padding: var(--spacing-3);
+      background: #fffbe6;
+      border: 1px solid var(--warning-color);
+      border-radius: var(--border-radius);
+    }
+
+    /* Setup Panel */
+    .roles {
+      display: flex;
+      gap: var(--spacing-2);
+      flex-wrap: wrap;
+    }
+
+    #displayText {
+      font-family: var(--font-family-english);
+      font-size: var(--font-size-lg);
+      line-height: var(--line-height-base);
+      letter-spacing: .01em;
+      background: #f8f9fa;
+      min-height: 200px;
+    }
+
+    /* Chat Panel */
+    .chat-tools {
+      display: flex;
+      gap: var(--spacing-2);
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .rateSelect {
+      width: auto;
+      min-width: 96px;
+      padding: .3rem .5rem;
+      font-size: var(--font-size-sm);
+    }
+
+    #chat {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-3);
+      font-family: var(--font-family-english);
+      font-size: var(--font-size-lg);
+      line-height: var(--line-height-base);
+      letter-spacing: .01em;
+      padding: var(--spacing-3);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      min-height: 250px;
+      background: #fdfdfd;
+      scroll-behavior: smooth;
+    }
+
+    .msg {
+      padding: var(--spacing-3) var(--spacing-4);
+      border-radius: var(--border-radius);
+      max-width: 84%;
+      white-space: pre-wrap;
+      box-shadow: var(--shadow-sm);
+      position: relative;
+    }
+
+    .msg.system {
+      background: var(--system-bubble-bg);
+      align-self: center;
+      font-size: var(--font-size-sm);
+      color: var(--text-color-muted);
+    }
+
+    .msg.user {
+      background: var(--user-bubble-bg);
+      align-self: flex-end;
+      text-align: right;
+    }
+
+    .msg.assistant {
+      background: var(--ai-bubble-bg);
+      align-self: flex-start;
+      text-align: left;
+    }
+
+    .msg .bubble-actions {
+      display: flex;
+      gap: .4rem;
+      margin-bottom: .25rem;
+    }
+
+    .msg.assistant .msg-body {
+      display: inline;
+    }
+
+    .msg.assistant.hide-text .msg-body {
+      color: var(--ai-bubble-bg);
+    }
+
+    .msg.assistant .toggleBtn,
+    .msg.assistant .playBtn {
+      padding: .15rem .5rem;
+      border: 1px solid var(--primary-color);
+      border-radius: var(--border-radius-pill);
+      background: #fff;
+      color: var(--primary-color);
+      font-size: .85rem;
+      cursor: pointer;
+      transition: background-color .15s, box-shadow .2s;
+    }
+
+    .msg.assistant .toggleBtn:hover,
+    .msg.assistant .playBtn:hover {
+      background: #e9f5ff;
+    }
+
+    .msg.assistant.ai-thinking {
+      opacity: 0.85;
+      font-style: italic;
+      color: var(--text-color-muted);
+    }
+
+    .msg.assistant.ai-thinking .thinking-dots .dot {
+      animation: thinkingDot 1.2s infinite;
+    }
+
+    .msg.assistant.ai-thinking .thinking-dots .dot:nth-of-type(2) {
+      animation-delay: 0.2s;
+    }
+
+    .msg.assistant.ai-thinking .thinking-dots .dot:nth-of-type(3) {
+      animation-delay: 0.4s;
+    }
+
+    @keyframes thinkingDot {
+      0%, 60%, 100% { opacity: 0.2; }
+      30% { opacity: 1; }
+    }
+
+    .msg.assistant .playBtn.is-speaking,
+    .msg.assistant .playBtn[aria-pressed="true"] {
+      background: #e9f5ff;
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      box-shadow: var(--speaking-ring);
+    }
+
+    /* Input Panel */
+    #userInput {
+      font-family: var(--font-family-english);
+      font-size: var(--font-size-lg);
+      line-height: var(--line-height-base);
+      letter-spacing: .01em;
+      min-height: 120px;
+    }
+
+    #firstLineHint {
+      margin-top: .5rem;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #111;
+      letter-spacing: .01em;
+      background: #fff;
+      border-left: 4px solid #111;
+      padding: .4rem .6rem;
+      border-radius: .25rem;
+      white-space: pre-wrap;
+    }
+
+    /* 音声入力3要素のレイアウト */
+    .input-row .rec-btn {
+      flex: 1 1 0;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      justify-content: center;
+      min-height: 44px;
+      border: 1px solid var(--border-color);
+    }
+
+    .input-row .recbox {
+      flex: 1 1 0;
+    }
+
+    .input-row .send-btn {
+      flex: 2 1 0;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      justify-content: center;
+      min-height: 44px;
+    }
+
+    .icon {
+      width: 1.1rem;
+      height: 1.1rem;
+      fill: currentColor;
+    }
+
+    .icon.small {
+      width: .95rem;
+      height: .95rem;
+    }
+
+    /* マイクON/OFF見た目 */
+    .rec-btn.on {
+      background: #fee2e2;
+      color: #b91c1c;
+      border-color: #fecaca;
+    }
+
+    .rec-btn .rec-label {
+      font-weight: 700;
+    }
+
+    /* ステータスボックス（実測ビジュアライザー） */
+    .recbox {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: .35rem .6rem;
+      background: #fff;
+      transition: box-shadow .2s, border-color .2s, color .2s;
+    }
+
+    .recbox .recbox-left {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      color: var(--text-color-muted);
+    }
+
+    .recbox.recording .recbox-left {
+      color: #b91c1c;
+      font-weight: 700;
+    }
+
+    .recbox.recording {
+      border-color: #fecaca;
+      box-shadow: 0 0 0 3px rgba(239, 68, 68, .15);
+    }
+
+    /* 実測ビジュアライザー */
+    .viz {
+      display: flex;
+      align-items: flex-end;
+      gap: 4px;
+      height: 20px;
+    }
+
+    .viz .bar {
+      width: 4px;
+      height: 6px;
+      background: #9ca3af;
+      border-radius: 2px;
+      transition: height 60ms linear, background-color 120ms ease, opacity .2s;
+      opacity: .9;
+    }
+
+    .recbox.recording .viz .bar {
+      background: #ef4444;
+    }
+
+    /* フェーズボタン行 */
+    .phase-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--spacing-3);
+    }
+
+    /* Status Panel */
+    #status {
+      padding: var(--spacing-4);
+      background: var(--surface-color);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      display: grid;
+      gap: var(--spacing-2);
+    }
+
+    #runState {
+      font-weight: 600;
+      font-size: var(--font-size-base);
+    }
+
+    #submitState {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      color: var(--success-color);
+    }
+
+    #submitState.error {
+      color: var(--danger-color);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      body {
+        padding: var(--spacing-3);
+      }
+
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        align-items: flex-start;
+      }
+
+      h1 {
+        font-size: 1.3rem;
+      }
+
+      .phase-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* 見出し右側のトグル行 */
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .header-row .right {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      color: var(--text-color-muted);
+      font-size: var(--font-size-sm);
+    }
+
+    .header-row .right label {
+      margin: 0;
+      font-weight: 500;
+    }
+
+    /* アクセシビリティ */
+    .visually-hidden {
+      position: absolute !important;
+      height: 1px;
+      width: 1px;
+      overflow: hidden;
+      clip: rect(1px, 1px, 1px, 1px);
+      white-space: nowrap;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+        scroll-behavior: auto !important;
+      }
+    }
+
+    .footer {
+      margin-top: 0.5rem;
+      text-align: center;
+      color: var(--text-color-muted);
+      font-size: var(--font-size-sm);
+    }
+
+    .footer a {
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .footer a:hover {
+      text-decoration: underline;
+    }
+
+    /* 既定は選択不可（キャレットも出ない） */
+    html,
+    body,
+    .container {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+      /* iOS 長押しメニュー無効化 */
+    }
+
+    /* 入力欄とチャット欄のみ選択（キャレット表示）を許可 */
+    input,
+    textarea,
+    select,
+    #chat,
+    #chat * {
+      -webkit-user-select: text;
+      user-select: text;
+      -webkit-touch-callout: default;
+    }
+
+    /* 見出し・ラベル等は引き続き選択不可（冗長だが明示） */
+    h1,
+    h2,
+    label,
+    .card,
+    .toolbar,
+    .pill,
+    .small,
+    .roles,
+    .header-row,
+    #status,
+    .msg.system,
+    .msg.assistant,
+    .msg.user {
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* ボタンはクリックできるように（選択は不可のまま） */
+    button,
+    .btn,
+    [role="button"],
+    .toggleBtn,
+    .playBtn {
+      -webkit-user-select: none;
+      user-select: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <h1>AI英会話</h1>
+        <span id="identStatus" class="pill">未確定</span>
+      </div>
+      <div class="toolbar-right">
+        <div class="small" style="text-align: right; margin-right: 1rem; line-height: 1.2; font-size: 0.7rem;">
+          © 2025 Kojiro Nakamura. All rights reserved.<br>
+          Unauthorized reproduction or redistribution is prohibited.<br>
+          Contact: snakamurako@yamagataps.jp
+        </div>
+        <button id="btnRefresh" class="btn-secondary">ページ更新</button>
+        <button id="btnLogoutToolbar" class="btn-secondary hidden">ログアウト</button>
+        <button id="btnDiagnose" class="btn-secondary" title="GAS接続の診断">接続診断</button>
+      </div>
+    </div>
+    <!-- バグ特定用：診断パネル（?debug=1 で表示） -->
+    <div id="diagnosePanel" class="card hidden" style="background:var(--bg-secondary);font-family:monospace;font-size:0.75rem;">
+      <h3>🔧 GAS接続診断ログ</h3>
+      <div id="diagnoseLog" style="max-height:200px;overflow-y:auto;white-space:pre-wrap;padding:.5rem;border:1px solid var(--border-color);border-radius:4px;"></div>
+    </div>
+
+    <!-- Identity / Auth -->
+    <div class="card" id="identPanel">
+      <h2>ログイン</h2>
+
+      <!-- ロック画面 -->
+      <div id="authLockScreen" class="stack hidden">
+        <p class="warn" style="font-size:1.1rem;font-weight:600;">連続で間違えたため、24時間アクセスできません</p>
+        <p class="small" id="authLockUntilText"></p>
+        <div class="stack" style="margin-top:.75rem;padding:.75rem;border:1px solid var(--border-color);border-radius:var(--border-radius);">
+          <p class="small">管理者によりロック解除された場合は、メールアドレスを入力して状態を確認してください。</p>
+          <input type="email" id="authLockRecheckEmail" autocomplete="username" placeholder="example@school.jp">
+          <button type="button" id="btnRecheckLock" class="btn-secondary">ロック状態を確認</button>
+          <span id="authLockRecheckMsg" class="small"></span>
+        </div>
+      </div>
+
+      <!-- ログイン / 初回ログイン タブ -->
+      <div id="authTabsArea" class="stack">
+        <div class="auth-tabs" role="tablist">
+          <button type="button" class="auth-tab active" id="authTabBtnLogin" role="tab" aria-selected="true" aria-controls="authTabLogin">ログイン</button>
+          <button type="button" class="auth-tab" id="authTabBtnFirstLogin" role="tab" aria-selected="false" aria-controls="authTabFirstLogin">初回ログイン</button>
+        </div>
+
+        <div id="authTabLogin" class="auth-tab-panel active" role="tabpanel">
+          <form id="loginForm" autocomplete="on" class="stack">
+            <div>
+              <label for="loginEmail">メールアドレス</label>
+              <input type="email" name="email" id="loginEmail" autocomplete="username" placeholder="example@school.jp" required>
+            </div>
+            <div>
+              <label for="loginPin">PIN（生年月日8桁・例: 20080415）</label>
+              <input type="password" name="pin" id="loginPin" inputmode="numeric" maxlength="8" pattern="\d{8}"
+                autocomplete="current-password" placeholder="YYYYMMDD" required>
+            </div>
+            <button type="submit" id="btnAuthLogin" class="btn-primary">ログイン</button>
+          </form>
+          <p class="small">初めて使う方は <strong>初回ログイン</strong> タブへ</p>
+          <span id="authLoginMsg" class="small warn"></span>
+        </div>
+
+        <div id="authTabFirstLogin" class="auth-tab-panel" role="tabpanel">
+          <p class="small">PINは次回以降のログインに使います。生年月日8桁を設定してください。</p>
+          <form id="firstLoginForm" autocomplete="on" class="stack">
+            <div>
+              <label for="regEmail">メールアドレス（教員から配布）</label>
+              <input type="email" name="email" id="regEmail" autocomplete="username" placeholder="example@school.jp" required>
+            </div>
+            <div>
+              <label for="regInitialPw">初期パスワード（教員から配布）</label>
+              <input type="password" name="initialPassword" id="regInitialPw" autocomplete="current-password" required>
+            </div>
+            <div>
+              <label for="regPin">新しいPIN（生年月日8桁・例: 20080415）</label>
+              <input type="password" name="pin" id="regPin" inputmode="numeric" maxlength="8" pattern="\d{8}"
+                autocomplete="new-password" placeholder="YYYYMMDD" required>
+            </div>
+            <div>
+              <label for="regPinConfirm">PIN（確認）</label>
+              <input type="password" name="pinConfirm" id="regPinConfirm" inputmode="numeric" maxlength="8" pattern="\d{8}"
+                autocomplete="new-password" placeholder="YYYYMMDD" required>
+            </div>
+            <button type="submit" id="btnAuthFirstLogin" class="btn-primary">登録してログイン</button>
+          </form>
+          <p class="small">登録済みの方は <strong>ログイン</strong> タブをご利用ください</p>
+          <span id="authFirstLoginMsg" class="small warn"></span>
+        </div>
+      </div>
+
+      <!-- ログイン済み表示 -->
+      <div id="authLoggedIn" class="stack hidden">
+        <div class="small">ログイン中：<b id="acctEmail" style="font-weight:600;color:var(--text-color);">—</b></div>
+        <div id="wl-ok" class="stack hidden">
+          <div class="small">登録情報：</div>
+          <div><b id="wlName">—</b>（４桁ID：<b id="wlId4">—</b>）</div>
+        </div>
+        <div id="wl-ng" class="small hidden">氏名・4桁IDが未設定です（管理者に users シートの登録を依頼してください）。</div>
+        <div class="pill"><span id="identBadge">未確定</span></div>
+        <button id="btnLogout" class="btn-secondary" style="width:auto;">ログアウト</button>
+      </div>
+    </div>
+
+    <!-- Setup -->
+    <div class="card">
+      <h2>学習設定</h2>
+      <div class="grid-2">
+        <div>
+          <label for="cefr">CEFRレベル (A1 易 → B2 難)</label>
+          <select id="cefr">
+            <option>A1</option>
+            <option selected>A2</option>
+            <option>B1</option>
+            <option>B2</option>
+            <option>No Limit</option>
+          </select>
+        </div>
+        <div>
+          <label for="voiceSelect">読み上げ（TTS）音声</label>
+          <select id="voiceSelect"></select>
+          <div class="small" style="margin-top:.5rem;">US/GB の通常音声を全件表示します。</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <label for="bookSelect">ブック（学年＋科目）</label>
+          <select id="bookSelect"></select>
+        </div>
+        <div>
+          <label for="unitSelect">単元（シート）</label>
+          <select id="unitSelect"></select>
+        </div>
+      </div>
+
+      <div>
+        <label for="problemSelect">取り組む英会話</label>
+        <select id="problemSelect"></select>
+      </div>
+
+      <div class="grid-2">
+        <div>
+          <label for="userRole">あなたの役割を選んでください</label>
+          <select id="userRole"></select>
+          <div id="roleLockNote" class="small hidden" style="margin-top:.5rem;">※ この英会話は <b>AI=A 固定</b>
+            のため、役割は変更できません（ユーザー=B）。</div>
+          <div class="small" id="roleNormalNote" style="margin-top:.5rem;">※ 既定は A（左側）です。</div>
+        </div>
+        <div>
+          <label>役割バッジ</label>
+          <div class="roles">
+            <span id="userRoleBadge" class="pill pill-user">User: —</span>
+            <span id="aiRoleBadge" class="pill">AI: —</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label for="displayText">あなたへの指示</label>
+        <textarea id="displayText" readonly></textarea>
+      </div>
+    </div>
+
+    <!-- Conversation -->
+    <div class="card">
+      <h2>会話</h2>
+      <div>
+        <label for="chat">チャット</label>
+        <div class="chat-tools" style="margin:.25rem 0 .5rem;">
+          <select id="aiRate" class="rateSelect" title="再生速度">
+            <option value="1.0" selected>1.0x</option>
+            <option value="0.9">0.9x</option>
+            <option value="0.8">0.8x</option>
+            <option value="0.7">0.7x</option>
+            <option value="0.6">0.6x</option>
+          </select>
+          <span class="small">※ 各AI吹き出し「▶」で個別再生 ／ 初期は非表示（「表示」で展開）</span>
+        </div>
+        <div id="chat"></div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="card">
+      <div class="header-row">
+        <h2 style="margin:0;">あなたの発話</h2>
+        <div class="right">
+          <input type="checkbox" id="autoScrollToggle" checked>
+          <label for="autoScrollToggle">発言の度に最下部までスクロールする</label>
+        </div>
+      </div>
+
+      <div>
+        <label>音声認識・発話</label>
+        <div class="input-row">
+          <button id="btnRecToggle" class="btn-secondary btn-icon rec-btn" title="音声認識 開始/停止" aria-pressed="false">
+            <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 14 0h-2zM11 19h2v3h-2z" />
+            </svg>
+            <span class="rec-label">開始</span>
+          </button>
+
+          <div id="recStatusBox" class="recbox" role="status" aria-live="polite" title="音声認識ステータス">
+            <div class="recbox-left">
+              <svg class="icon small" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3z" />
+              </svg>
+              <span id="recStateText">停止中</span>
+            </div>
+            <div id="recViz" class="viz" aria-hidden="true">
+              <span class="bar b1" style="height:6px"></span>
+              <span class="bar b2" style="height:6px"></span>
+              <span class="bar b3" style="height:6px"></span>
+              <span class="bar b4" style="height:6px"></span>
+              <span class="bar b5" style="height:6px"></span>
+            </div>
+          </div>
+
+          <div class="grid-2" style="flex: 2 1 0; gap:.5rem;">
+            <button id="btnSendPeriod" class="btn-primary send-btn" title="発話を送信 (.)">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 21l20-9L2 3v7l14 2-14 2v7z" />
+              </svg>
+              <span>発信(.)</span>
+            </button>
+            <button id="btnSendQuestion" class="btn-warning send-btn" title="発話を送信 (?)">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M2 21l20-9L2 3v7l14 2-14 2v7z" />
+              </svg>
+              <span>発信(?)</span>
+            </button>
+          </div>
+        </div>
+        <div class="small" style="margin-top:.5rem;">確定結果のみ追記。自動停止後は🎙で再開してください。</div>
+      </div>
+
+      <div>
+        <label for="userInput">入力（音声認識の文字起こし / 手入力で修正可）</label>
+        <textarea id="userInput" placeholder="Speak or type here..."></textarea>
+        <div id="firstLineHint"></div>
+      </div>
+
+      <div class="phase-row">
+        <button id="btnPhase" class="btn-danger">英会話開始（＋音声認識）</button>
+        <button id="btnRestart" class="btn-secondary">同じ設定で最初から</button>
+      </div>
+    </div>
+
+    <!-- Status -->
+    <div id="status">
+      <div id="runState">準備中…</div>
+      <div id="submitState"></div>
+    </div>
+    <!-- Footer -->
+    <div id="afterSubmitLink" class="footer hidden">
+      <a href="https://gemini.google.com/gem/1I5wPoRyfR4VCDQnLpsVbdQgrljTZOjIQ?usp=sharing" target="_blank"
+        rel="noopener noreferrer">
+        Gemini：AI英会話フィードバック・プロバイダー（別タブ）を開く　←ここにコピペしてより詳細なフィードバックを得よう。
+      </a>
+    </div>
+  </div> <!-- /.container -->
+  </div>
+
+  <script>
+    /* ========= グローバル状態 ========= */
+    let books = [], units = [], problems = [];
+    let forceFetch = false;
+    let currentBook = null, currentUnit = null, currentRow = null;
+    let messages = [];                 // AIに送る会話ログ（systemは送らない）
+    let busy = false, hasSubmitted = false, hasStarted = false;
+    let returnedFB = '';               // 取得済みフィードバック
+    let preFBShown = false;            // 直前ヒントの重複防止
+    let selectorsFrozen = false;       // ブック/ユニット/問題 UI freeze
+    let voices = [], voiceReady = false, speakingNow = false;
+    let rec = null, recognizing = false;
+    let phase = 'start';               // 'start' -> 'feedback' -> 'submit' -> 'done'
+    let firstUserSent = false;         // 最初のセリフ（参考）を消す判定
+    let roleLockedToA = false;         // ★ 役割ロック（AI=A固定）
+
+    // TTS⇄STT 連携
+    let _resumeRecAfterTTS = false;
+    const TTS_STOP_WAIT_MS = 400;
+    const TTS_TAIL_BUFFER_MS = 700;
+    let ttsEndTime = 0; // TTS終了時刻（エコー防止用）
+    let currentUtterance = null; // ★ GC対策：グローバル変数で保持
+
+    // GAS REST 呼び出し設定（APP_CONFIG で上書き可能、未設定時は以下を使用）
+    let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbwnRyUjCDMljcZ8vljyU3HxkPMb3e8UwBxS41_cZaDt2znJCEAqOGxep1nkc02v-JTCQQ/exec';
+
+    const AUTH_LOCK_KEY = 'auth_locked_until';
+    const AUTH_FAIL_KEY = 'auth_fail_count';
+    const AUTH_LOCK_EMAIL_KEY = 'auth_lock_email';
+    const AUTH_SESSION_KEY = 'auth_session';
+    const MAX_AUTH_FAIL = 4;
+    const LOCK_MS = 24 * 60 * 60 * 1000;
+
+    function configNotSet() {
+      return !GAS_URL || GAS_URL.includes('YOUR_DEPLOYMENT_ID');
+    }
+
+    // バグ特定用：診断ログ（?debug=1 で有効）
+    const GAS_DEBUG = /[?&]debug=1/.test(location.search);
+    function diagLog(msg, ok) {
+      const el = document.getElementById('diagnoseLog');
+      if (!el) return;
+      const ts = new Date().toISOString().slice(11, 23);
+      const line = `[${ts}] ${msg}` + (ok !== undefined ? (ok ? ' ✓' : ' ✗') : '');
+      el.textContent += line + '\n';
+      el.scrollTop = el.scrollHeight;
+      console.log('[GAS診断]', line);
+    }
+
+    async function callGAS(action, payload = {}) {
+      const step = (n, msg) => { if (GAS_DEBUG) diagLog(`Step ${n}: ${msg}`); };
+      step(0, `callGAS(${action}) 開始`);
+
+      if (configNotSet()) { step(1, '設定未完了'); throw new Error('設定未完了: GAS_URL を設定してください'); }
+      step(1, '設定OK');
+
+      const data = { action, ...payload };
+      const body = 'd=' + encodeURIComponent(JSON.stringify(data));
+      step(2, `fetch送信開始 (${GAS_URL.slice(0, 50)}...)`);
+
+      let res;
+      try {
+        res = await fetch(GAS_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body
+        });
+        step(3, `fetch完了 status=${res.status} type=${res.type}`);
+      } catch (e) {
+        step(3, `fetch失敗: ${e.name} ${e.message}`);
+        throw new Error(`Step3失敗: ${e.name} - ${e.message}`);
+      }
+
+      let text;
+      try {
+        text = await res.text();
+        step(4, `応答取得 len=${(text || '').length} 先頭="${(text || '').trim().slice(0, 50)}..."`);
+      } catch (e) {
+        step(4, `res.text()失敗: ${e.message}`);
+        throw new Error(`Step4失敗: ${e.message}`);
+      }
+
+      const trim = (text || '').trim();
+      if (!trim.startsWith('{') && !trim.startsWith('[')) {
+        step(5, `JSONでない応答 (HTML等)`);
+        throw new Error('GASがHTMLを返しました。URL・認証設定・デプロイを確認してください。(' + (trim.slice(0, 80).replace(/\s+/g, ' ') || res.status) + ')');
+      }
+      step(5, '応答はJSON形式');
+
+      let json;
+      try {
+        json = JSON.parse(text);
+        step(6, `JSONパース成功 status=${json.status}`);
+      } catch (e) {
+        step(6, `JSONパース失敗: ${e.message}`);
+        throw new Error('GASの応答がJSONではありません: ' + (trim.slice(0, 80) || res.status));
+      }
+
+      if (json.status === 'error') {
+        step(7, `GAS側エラー: ${json.message}`);
+        const err = new Error(json.message || 'GAS error');
+        if (json.locked) {
+          err.locked = true;
+          err.lockedUntil = json.lockedUntil || '';
+        }
+        throw err;
+      }
+      step(7, '成功');
+      if (json.status === 'success' && json.data !== undefined) return json.data;
+      return json;
+    }
+
+    async function runGASDiagnostic() {
+      if (busy) return;
+      await withButtonAction(el('btnDiagnose'), {
+        busyMessage: '接続診断中…',
+        buttonLabel: '診断中…'
+      }, async () => {
+      const panel = document.getElementById('diagnosePanel');
+      const log = document.getElementById('diagnoseLog');
+      if (panel && log) {
+        panel.classList.remove('hidden');
+        log.textContent = '';
+      }
+      diagLog('=== GAS接続診断 開始 ===');
+      diagLog(`origin: ${location.origin} protocol: ${location.protocol}`);
+      diagLog(`GAS_URL: ${GAS_URL}`);
+      if (location.protocol === 'file:') diagLog('⚠ file:// はCORSでブロックされます', false);
+
+      try {
+        diagLog('Step1: 設定チェック');
+        if (configNotSet()) throw new Error('GAS_URL未設定');
+        diagLog('Step1: OK', true);
+
+        diagLog('Step2: リクエストbody構築');
+        const data = { action: 'list_books', forceUpdate: false };
+        const body = 'd=' + encodeURIComponent(JSON.stringify(data));
+        diagLog('Step2: OK', true);
+
+        diagLog('Step3: fetch() 送信');
+        let res;
+        try {
+          res = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body
+          });
+        } catch (e) {
+          diagLog(`Step3: 失敗 - ${e.name}: ${e.message}`, false);
+          diagLog('※ Failed to fetch → CORS/ネットワーク/URL確認');
+          return;
+        }
+        diagLog(`Step3: OK status=${res.status} type=${res.type}`, true);
+
+        diagLog('Step4: res.text() 取得');
+        const text = await res.text();
+        diagLog(`Step4: OK len=${text.length} 先頭="${text.trim().slice(0, 60)}..."`, true);
+
+        diagLog('Step5: JSON形式チェック');
+        const trim = text.trim();
+        if (!trim.startsWith('{') && !trim.startsWith('[')) {
+          diagLog(`Step5: 失敗 - HTML等を返却`, false);
+          diagLog(`先頭80文字: ${trim.slice(0, 80)}`);
+          return;
+        }
+        diagLog('Step5: OK', true);
+
+        diagLog('Step6: JSON.parse');
+        const json = JSON.parse(text);
+        diagLog(`Step6: OK status=${json.status}`, true);
+
+        diagLog('Step7: 業務レスポンス確認');
+        if (json.status === 'error') {
+          diagLog(`Step7: GAS側エラー - ${json.message}`, false);
+          return;
+        }
+        diagLog('Step7: 全成功', true);
+        diagLog(`取得件数: ${Array.isArray(json.data) ? json.data.length : (json.data && json.data.books ? json.data.books.length : '(構造確認)')}件`);
+      } catch (e) {
+        diagLog(`例外: ${e.message}`, false);
+        if (e.stack) diagLog(e.stack);
+      }
+      diagLog('=== 診断終了 ===');
+      });
+    }
+
+    async function gasAction(fnName, args) {
+      switch (fnName) {
+        case 'listThemeBooksCached':
+          return callGAS('list_books', { forceUpdate: args[0] });
+        case 'listThemeUnitsCached':
+          return callGAS('list_units', { spreadsheetId: args[0], forceUpdate: args[1] });
+        case 'listThemeProblemsCached':
+          return callGAS('list_problems', { spreadsheetId: args[0], sheetName: args[1], forceUpdate: args[2] });
+        case 'startConversation':
+          return callGAS('start_conversation', { messages: args[0], cefr: args[1], row: args[2], userRoleName: args[3] });
+        case 'continueConversation':
+          return callGAS('continue_conversation', { messages: args[0], cefr: args[1], row: args[2], userRoleName: args[3] });
+        case 'getFeedback':
+          return callGAS('get_feedback', { messages: args[0], cefr: args[1], row: args[2], userRoleName: args[3], extraMeta: args[4] });
+        case 'submitTask':
+          return callGAS('submit_task', {
+            gIdentity: args[0], bookName: args[1], unitName: args[2], row: args[3],
+            messages: args[4], returnedFB: args[5], cefr: args[6], userRoleName: args[7]
+          });
+        case 'submitIdentityConfirmation':
+          return callGAS('submit_identity', args[0] || {});
+        case 'getAccessProfile':
+          return callGAS('get_user_profile', { email: args[0] || '' });
+        default:
+          throw new Error('Unknown action: ' + fnName);
+      }
+    }
+
+    /** GAS HtmlService 直配信時はネイティブ google.script.run を優先（fetch ループバック回避） */
+    const _nativeGasRun = (function captureNativeGasRun() {
+      try {
+        if (typeof google !== 'undefined' && google.script && google.script.run &&
+          typeof google.script.run.withSuccessHandler === 'function' &&
+          typeof google.script.run.withFailureHandler === 'function') {
+          return google.script.run;
+        }
+      } catch (_) {}
+      return null;
+    })();
+
+    function createFetchGoogleScriptRun() {
+      const state = { success: null, failure: null };
+      const runner = {
+        withSuccessHandler(fn) { state.success = fn; return runner; },
+        withFailureHandler(fn) { state.failure = fn; return runner; }
+      };
+      ['listThemeBooksCached', 'listThemeUnitsCached', 'listThemeProblemsCached', 'startConversation', 'continueConversation', 'getFeedback', 'submitTask', 'submitIdentityConfirmation', 'getAccessProfile'].forEach(fnName => {
+        runner[fnName] = async (...args) => {
+          try {
+            const res = await gasAction(fnName, args);
+            if (state.success) state.success(res);
+          } catch (err) {
+            if (state.failure) state.failure(err);
+            else console.error(err);
+          }
+        };
+      });
+      return runner;
+    }
+
+    if (!_nativeGasRun) {
+      window.google = window.google || {};
+      google.script = google.script || {};
+      Object.defineProperty(google.script, 'run', { get() { return createFetchGoogleScriptRun(); } });
+    }
+
+    /* ========= DOM ========= */
+    const el = id => document.getElementById(id);
+    const bookSelect = el('bookSelect'), unitSelect = el('unitSelect'), problemSelect = el('problemSelect');
+    const displayText = el('displayText'), userRoleSel = el('userRole'), cefr = el('cefr');
+    const voiceSelect = el('voiceSelect'), userInput = el('userInput');
+    const btnSendPeriod = el('btnSendPeriod'), btnSendQuestion = el('btnSendQuestion');
+    const btnRecToggle = el('btnRecToggle');
+    const chatDiv = el('chat');
+    const runStateDiv = el('runState'), submitStateDiv = el('submitState');
+    const btnRefresh = el('btnRefresh'), btnPhase = el('btnPhase'), btnRestart = el('btnRestart');
+    const firstLineHint = el('firstLineHint');
+    const autoScrollToggle = el('autoScrollToggle');
+    const identPanel = el('identPanel'), identStatus = el('identStatus');
+    const acctEmail = el('acctEmail'), wlOk = el('wl-ok'), wlNg = el('wl-ng'), wlName = el('wlName'), wlId4 = el('wlId4');
+    const identBadge = el('identBadge');
+    const authLockScreen = el('authLockScreen'), authLockUntilText = el('authLockUntilText');
+    const authTabsArea = el('authTabsArea'), authLoggedIn = el('authLoggedIn');
+    const authTabBtnLogin = el('authTabBtnLogin'), authTabBtnFirstLogin = el('authTabBtnFirstLogin');
+    const authTabLogin = el('authTabLogin'), authTabFirstLogin = el('authTabFirstLogin');
+    const loginForm = el('loginForm'), firstLoginForm = el('firstLoginForm');
+    const authLoginMsg = el('authLoginMsg'), authFirstLoginMsg = el('authFirstLoginMsg');
+    const roleLockNote = el('roleLockNote'), roleNormalNote = el('roleNormalNote');
+
+    /* ========= 認証（メール+PIN） ========= */
+    let gIdentity = { status: 'guest', email: '', name: '', id4: '', selfCheck: '' };
+
+    function getClientLockUntil() {
+      try {
+        const raw = localStorage.getItem(AUTH_LOCK_KEY);
+        if (!raw) return null;
+        const d = new Date(raw);
+        return isNaN(d.getTime()) ? null : d;
+      } catch (_) { return null; }
+    }
+
+    function isClientLocked() {
+      const until = getClientLockUntil();
+      if (!until) return false;
+      if (Date.now() >= until.getTime()) {
+        clearClientLock();
+        return false;
+      }
+      return true;
+    }
+
+    function clearClientLock() {
+      try {
+        localStorage.removeItem(AUTH_LOCK_KEY);
+        localStorage.removeItem(AUTH_FAIL_KEY);
+        localStorage.removeItem(AUTH_LOCK_EMAIL_KEY);
+      } catch (_) {}
+    }
+
+    function applyClientLock(lockedUntilIso, email) {
+      const until = lockedUntilIso ? new Date(lockedUntilIso) : new Date(Date.now() + LOCK_MS);
+      try {
+        localStorage.setItem(AUTH_LOCK_KEY, until.toISOString());
+        localStorage.setItem(AUTH_FAIL_KEY, '0');
+        if (email) localStorage.setItem(AUTH_LOCK_EMAIL_KEY, normalizeEmailLocal_(email));
+      } catch (_) {}
+    }
+
+    function normalizeEmailLocal_(email) {
+      return String(email || '').trim().toLowerCase();
+    }
+
+    function recordClientAuthFailure(serverLockedUntil, email) {
+      if (serverLockedUntil) {
+        applyClientLock(serverLockedUntil, email);
+        return;
+      }
+      try {
+        if (email) localStorage.setItem(AUTH_LOCK_EMAIL_KEY, normalizeEmailLocal_(email));
+        let fails = parseInt(localStorage.getItem(AUTH_FAIL_KEY) || '0', 10) + 1;
+        if (fails >= MAX_AUTH_FAIL) {
+          applyClientLock(null, email);
+        } else {
+          localStorage.setItem(AUTH_FAIL_KEY, String(fails));
+        }
+      } catch (_) {}
+    }
+
+    function clearClientAuthFailures() {
+      try {
+        localStorage.removeItem(AUTH_FAIL_KEY);
+        localStorage.removeItem(AUTH_LOCK_KEY);
+      } catch (_) {}
+    }
+
+    function saveAuthSession(email) {
+      try {
+        localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ email, authenticatedAt: new Date().toISOString() }));
+      } catch (_) {}
+    }
+
+    function loadAuthSession() {
+      try {
+        const raw = localStorage.getItem(AUTH_SESSION_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && parsed.email ? parsed : null;
+      } catch (_) { return null; }
+    }
+
+    function clearAuthSession() {
+      try { localStorage.removeItem(AUTH_SESSION_KEY); } catch (_) {}
+    }
+
+    function clearAuthTabMessages() {
+      if (authLoginMsg) authLoginMsg.textContent = '';
+      if (authFirstLoginMsg) authFirstLoginMsg.textContent = '';
+    }
+
+    function switchAuthTab(tab) {
+      if (busy) return;
+      const isLogin = tab === 'login';
+      if (authTabBtnLogin) {
+        authTabBtnLogin.classList.toggle('active', isLogin);
+        authTabBtnLogin.setAttribute('aria-selected', isLogin ? 'true' : 'false');
+      }
+      if (authTabBtnFirstLogin) {
+        authTabBtnFirstLogin.classList.toggle('active', !isLogin);
+        authTabBtnFirstLogin.setAttribute('aria-selected', !isLogin ? 'true' : 'false');
+      }
+      if (authTabLogin) authTabLogin.classList.toggle('active', isLogin);
+      if (authTabFirstLogin) authTabFirstLogin.classList.toggle('active', !isLogin);
+      clearAuthTabMessages();
+    }
+
+    function hideAllAuthScreens() {
+      authLockScreen.classList.add('hidden');
+      if (authTabsArea) authTabsArea.classList.add('hidden');
+      authLoggedIn.classList.add('hidden');
+    }
+
+    function showLockScreen() {
+      hideAllAuthScreens();
+      authLockScreen.classList.remove('hidden');
+      const until = getClientLockUntil();
+      if (authLockUntilText && until) {
+        authLockUntilText.textContent = 'ロック解除予定: ' + until.toLocaleString('ja-JP');
+      }
+      document.querySelectorAll('.card:not(#identPanel), #status, #afterSubmitLink').forEach(c => c.classList.add('hidden'));
+      identPanel.classList.remove('hidden');
+    }
+
+    function showAuthTabs(tab) {
+      hideAllAuthScreens();
+      if (authTabsArea) authTabsArea.classList.remove('hidden');
+      switchAuthTab(tab || 'login');
+      identPanel.classList.remove('hidden');
+      document.querySelectorAll('.card:not(#identPanel), #status, #afterSubmitLink').forEach(c => c.classList.add('hidden'));
+    }
+
+    function showLoginScreen() {
+      showAuthTabs('login');
+    }
+
+    function showFirstLoginTab() {
+      showAuthTabs('first');
+    }
+
+    function showLoggedInUI() {
+      hideAllAuthScreens();
+      identPanel.classList.add('hidden');
+      const btnLogoutToolbar = el('btnLogoutToolbar');
+      if (btnLogoutToolbar) btnLogoutToolbar.classList.remove('hidden');
+      document.querySelectorAll('.card.hidden, #status.hidden').forEach(c => {
+        if (c.id !== 'identPanel' && c.id !== 'diagnosePanel') c.classList.remove('hidden');
+      });
+      const statusEl = el('status');
+      if (statusEl) statusEl.classList.remove('hidden');
+    }
+
+    function handleAuthError(err, msgEl, email) {
+      if (err && err.locked) {
+        applyClientLock(err.lockedUntil, email);
+        showLockScreen();
+        return;
+      }
+      recordClientAuthFailure(null, email);
+      if (msgEl) msgEl.textContent = err.message || String(err);
+    }
+
+    async function syncClientLockWithServer(email) {
+      const targetEmail = normalizeEmailLocal_(email || localStorage.getItem(AUTH_LOCK_EMAIL_KEY) || '');
+      if (!targetEmail || configNotSet()) return isClientLocked();
+      try {
+        const status = await callGAS('auth_check_lock', { email: targetEmail });
+        if (!status || !status.locked) {
+          clearClientLock();
+          return false;
+        }
+        if (status.lockedUntil) applyClientLock(status.lockedUntil, targetEmail);
+        return true;
+      } catch (_) {
+        return isClientLocked();
+      }
+    }
+
+    async function onRecheckLock() {
+      const msgEl = el('authLockRecheckMsg');
+      const email = (el('authLockRecheckEmail').value || '').trim();
+      if (!email) {
+        if (msgEl) msgEl.textContent = 'メールアドレスを入力してください';
+        return;
+      }
+      await withButtonAction(el('btnRecheckLock'), {
+        busyMessage: 'ロック状態を確認中…',
+        buttonLabel: '確認中…'
+      }, async () => {
+        if (msgEl) msgEl.textContent = '';
+        const stillLocked = await syncClientLockWithServer(email);
+        if (stillLocked) {
+          if (msgEl) msgEl.textContent = 'サーバー側ではまだロック中です。管理者にご確認ください。';
+          showLockScreen();
+          return;
+        }
+        if (msgEl) msgEl.textContent = 'ロックが解除されました。ログインできます。';
+        showLoginScreen();
+        const loginEmail = el('loginEmail');
+        if (loginEmail) loginEmail.value = email;
+      });
+    }
+
+    async function completeAuthSuccess(email) {
+      clearClientAuthFailures();
+      saveAuthSession(email);
+      gIdentity = { status: 'verified-self', email, name: '', id4: '', selfCheck: 'はい' };
+      acctEmail.textContent = email;
+
+      try {
+        const profile = await callGAS('get_user_profile', { email });
+        if (profile && profile.found) {
+          gIdentity.name = profile.name || '';
+          gIdentity.id4 = profile.id4 || '';
+          wlName.textContent = gIdentity.name || '—';
+          wlId4.textContent = gIdentity.id4 || '—';
+          wlOk.classList.remove('hidden');
+          wlNg.classList.add('hidden');
+        } else {
+          gIdentity.name = email.split('@')[0];
+          gIdentity.id4 = '';
+          wlOk.classList.add('hidden');
+          wlNg.classList.remove('hidden');
+        }
+      } catch (_) {
+        gIdentity.name = email.split('@')[0];
+        wlOk.classList.add('hidden');
+        wlNg.classList.remove('hidden');
+      }
+
+      refreshIdentityBadges();
+      showLoggedInUI();
+      updateUI();
+      updatePhaseButton();
+
+      if (!configNotSet() && books.length === 0) {
+        try {
+          setBusy(true);
+          const booksRes = await callGAS('list_books', { forceUpdate: false });
+          updateBooks(booksRes || []);
+          cefr.value = 'A2';
+          statusRun('');
+        } catch (err) {
+          statusSubmit(err.message || String(err), true);
+        } finally {
+          setBusy(false);
+          updateUI();
+        }
+      }
+    }
+
+    async function onAuthLoginSubmit(e) {
+      e.preventDefault();
+      if (busy) return;
+      authLoginMsg.textContent = '';
+      const email = (el('loginEmail').value || '').trim();
+      const pin = (el('loginPin').value || '').trim();
+      if (!/^\d{8}$/.test(pin)) { authLoginMsg.textContent = 'PINは8桁の数字で入力してください'; return; }
+      await withButtonAction(el('btnAuthLogin'), {
+        busyMessage: 'ログイン中…',
+        buttonLabel: 'ログイン中…'
+      }, async () => {
+        try {
+          await callGAS('auth_login', { email, pin });
+          await completeAuthSuccess(email.toLowerCase());
+        } catch (err) {
+          handleAuthError(err, authLoginMsg, email);
+        }
+      });
+    }
+
+    async function onFirstLoginSubmit(e) {
+      e.preventDefault();
+      if (busy) return;
+      authFirstLoginMsg.textContent = '';
+      const email = (el('regEmail').value || '').trim();
+      const initialPassword = (el('regInitialPw').value || '').trim();
+      const pin = (el('regPin').value || '').trim();
+      const pinConfirm = (el('regPinConfirm').value || '').trim();
+      if (!/^\d{8}$/.test(pin)) { authFirstLoginMsg.textContent = 'PINは8桁の数字で入力してください'; return; }
+      if (pin !== pinConfirm) { authFirstLoginMsg.textContent = 'PIN（確認）が一致しません'; return; }
+      await withButtonAction(el('btnAuthFirstLogin'), {
+        busyMessage: '登録中…',
+        buttonLabel: '登録中…'
+      }, async () => {
+        try {
+          const res = await callGAS('auth_verify_initial', { email, initialPassword });
+          const normalizedEmail = (res && res.email) || email.toLowerCase();
+          await callGAS('auth_register_pin', { email: normalizedEmail, pin });
+          await completeAuthSuccess(normalizedEmail);
+        } catch (err) {
+          handleAuthError(err, authFirstLoginMsg, email);
+        }
+      });
+    }
+
+    function logout() {
+      clearAuthSession();
+      gIdentity = { status: 'guest', email: '', name: '', id4: '', selfCheck: '' };
+      acctEmail.textContent = '—';
+      wlName.textContent = '—';
+      wlId4.textContent = '—';
+      wlOk.classList.add('hidden');
+      wlNg.classList.add('hidden');
+      refreshIdentityBadges();
+      const btnLogoutToolbar = el('btnLogoutToolbar');
+      if (btnLogoutToolbar) btnLogoutToolbar.classList.add('hidden');
+      if (isClientLocked()) {
+        showLockScreen();
+      } else {
+        showLoginScreen();
+        document.querySelectorAll('.card:not(#identPanel), #status, #afterSubmitLink').forEach(c => c.classList.add('hidden'));
+      }
+      updateUI();
+      updatePhaseButton();
+    }
+
+    async function initAuthUI() {
+      if (!configNotSet()) {
+        try {
+          await callGAS('ensure_users_book', {});
+        } catch (_) {}
+      }
+      if (isClientLocked()) {
+        const stillLocked = await syncClientLockWithServer();
+        if (stillLocked) {
+          showLockScreen();
+          return;
+        }
+      }
+      const session = loadAuthSession();
+      if (!session || !session.email) {
+        showLoginScreen();
+      }
+    }
+
+    async function restoreSessionIfAny() {
+      const session = loadAuthSession();
+      if (!session || !session.email || isLoggedIn()) return;
+      await completeAuthSuccess(session.email);
+    }
+
+    /* ========= 本人確認（認証連携） ========= */
+    function isLoggedIn() { return gIdentity.status === 'verified-self' || gIdentity.status === 'verified-proxy'; }
+    function refreshIdentityBadges() {
+      if (gIdentity.status === 'verified-self') {
+        const label = gIdentity.name
+          ? `本人：${gIdentity.name}（${gIdentity.id4 || '—'}）`
+          : `ログイン：${gIdentity.email}`;
+        identBadge.textContent = label;
+        identStatus.textContent = label;
+      } else if (gIdentity.status === 'verified-proxy') {
+        identBadge.textContent = `代理：${gIdentity.name}（${gIdentity.id4}）`;
+        identStatus.textContent = `代理：${gIdentity.name}（${gIdentity.id4}）`;
+      } else {
+        identBadge.textContent = '未ログイン';
+        identStatus.textContent = '未ログイン';
+      }
+    }
+
+    /* ==== 認識UIの参照（実測ビジュアライザー） ==== */
+    const recStatusBox = document.getElementById('recStatusBox');
+    const recStateText = document.getElementById('recStateText');
+    const recToggleBtn = document.getElementById('btnRecToggle');
+    const recViz = document.getElementById('recViz');
+    const vizBars = Array.from(recViz.querySelectorAll('.bar'));
+
+    /* ========= ステータス表示 ========= */
+    function statusRun(s) { runStateDiv.textContent = s || ''; }
+    function statusSubmit(s, isError) { submitStateDiv.textContent = s || ''; submitStateDiv.classList.toggle('error', !!isError); }
+
+    /* オートスクロール */
+    function scrollToBottomIfEnabled() { if (autoScrollToggle && autoScrollToggle.checked) { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); } }
+
+    /* ========= UI制御 ========= */
+    function updateUI() {
+      const authLocked = !isLoggedIn();
+      const chatLocked = !!returnedFB || hasSubmitted;
+      cefr.disabled = busy || selectorsFrozen || chatLocked || authLocked;
+      bookSelect.disabled = busy || selectorsFrozen || chatLocked || authLocked;
+      unitSelect.disabled = busy || selectorsFrozen || chatLocked || authLocked;
+      problemSelect.disabled = busy || selectorsFrozen || chatLocked || authLocked;
+      userRoleSel.disabled = roleLockedToA || busy || selectorsFrozen || chatLocked || authLocked; // ★
+      voiceSelect.disabled = busy || chatLocked || authLocked;
+      userInput.disabled = busy || chatLocked || authLocked;
+      const empty = (userInput.value.trim().length < 1); // 1文字でもあれば送信可に変更
+      btnSendPeriod.disabled = busy || chatLocked || authLocked || empty;
+      btnSendQuestion.disabled = busy || chatLocked || authLocked || empty;
+      btnRecToggle.disabled = busy || chatLocked || authLocked || speakingNow || !hasStarted;
+      const authInputs = ['loginEmail', 'loginPin', 'regEmail', 'regInitialPw', 'regPin', 'regPinConfirm', 'authLockRecheckEmail'];
+      authInputs.forEach(id => {
+        const inp = el(id);
+        if (inp) inp.disabled = busy && !isLoggedIn();
+      });
+      updatePhaseButton();
+    }
+    let _activeLoadingBtn = null;
+
+    function beginButtonLoading(btn, loadingLabel) {
+      if (!btn || btn.classList.contains('btn-loading')) return false;
+      btn.dataset.btnHtmlStore = btn.innerHTML;
+      btn.classList.add('btn-loading');
+      btn.disabled = true;
+      btn.setAttribute('aria-busy', 'true');
+      const label = loadingLabel || '処理中…';
+      btn.innerHTML = `<span class="btn-loading-label">${label}</span>`;
+      _activeLoadingBtn = btn;
+      return true;
+    }
+
+    function endButtonLoading(btn) {
+      const target = btn || _activeLoadingBtn;
+      if (!target) return;
+      target.classList.remove('btn-loading');
+      target.disabled = false;
+      target.removeAttribute('aria-busy');
+      if (target.dataset.btnHtmlStore !== undefined) {
+        target.innerHTML = target.dataset.btnHtmlStore;
+        delete target.dataset.btnHtmlStore;
+      }
+      if (_activeLoadingBtn === target) _activeLoadingBtn = null;
+    }
+
+    function setAuthTabsDisabled(disabled) {
+      if (authTabBtnLogin) authTabBtnLogin.disabled = !!disabled;
+      if (authTabBtnFirstLogin) authTabBtnFirstLogin.disabled = !!disabled;
+    }
+
+    async function withButtonAction(btn, options, fn) {
+      if (busy) return false;
+      const busyMessage = (options && options.busyMessage) || '処理中…';
+      const buttonLabel = (options && options.buttonLabel) || busyMessage;
+      setBusy(true, busyMessage);
+      setAuthTabsDisabled(true);
+      if (btn && !beginButtonLoading(btn, buttonLabel)) {
+        setBusy(false);
+        setAuthTabsDisabled(false);
+        return false;
+      }
+      try {
+        await fn();
+        return true;
+      } finally {
+        endButtonLoading(btn);
+        setBusy(false);
+        setAuthTabsDisabled(false);
+      }
+    }
+
+    function setBusy(flag, message) {
+      busy = !!flag;
+      statusRun(busy ? (message || '処理中…') : '');
+      if (!busy) {
+        removeAiThinking();
+        setAuthTabsDisabled(false);
+      }
+      updateUI();
+    }
+
+    function showAiThinking(label) {
+      removeAiThinking();
+      const div = document.createElement('div');
+      div.className = 'msg assistant ai-thinking';
+      div.id = 'aiThinkingBubble';
+      const text = label || 'AIが考え中';
+      div.innerHTML = `<span class="thinking-dots" aria-live="polite">${text}<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></span>`;
+      chatDiv.appendChild(div);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    function removeAiThinking() {
+      const bubble = document.getElementById('aiThinkingBubble');
+      if (bubble) bubble.remove();
+    }
+
+    /* ========= 会話描画（AI＝初期非表示） ========= */
+    function buildAssistantBubble(text) {
+      const div = document.createElement('div'); div.className = 'msg assistant hide-text';
+      const actions = document.createElement('div'); actions.className = 'bubble-actions';
+      const toggle = document.createElement('button'); toggle.className = 'toggleBtn'; toggle.textContent = '表示';
+      toggle.onclick = () => { const hidden = div.classList.toggle('hide-text'); toggle.textContent = hidden ? '表示' : '非表示'; };
+      const play = document.createElement('button'); play.className = 'playBtn'; play.textContent = '▶';
+      play.onclick = () => speak(text);
+      actions.appendChild(toggle); actions.appendChild(play);
+      const body = document.createElement('span'); body.className = 'msg-body'; body.textContent = text;
+      div.appendChild(actions); div.appendChild(body);
+      chatDiv.appendChild(div); chatDiv.scrollTop = chatDiv.scrollHeight;
+      return { div, toggle, play, body };
+    }
+    async function addAssistantBubbleWithAutoTTS(text) {
+      const b = buildAssistantBubble(text);
+      if (!('speechSynthesis' in window) || !voiceReady || !text) { return; }
+      await beginTTS(true); scrollToBottomIfEnabled();
+      b.play.classList.add('is-speaking'); b.play.setAttribute('aria-pressed', 'true'); b.play.disabled = true; b.toggle.disabled = true;
+      const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0];
+      const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0;
+      currentUtterance = u; // ★ GC対策
+      speakingNow = true; updateUI();
+      const cleanup = () => { currentUtterance = null; b.play.classList.remove('is-speaking'); b.play.setAttribute('aria-pressed', 'false'); b.play.disabled = false; b.toggle.disabled = false; speakingNow = false; updateUI(); endTTS(); };
+      u.onend = cleanup; u.onerror = cleanup;
+      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+    }
+    function addAssistantBubble(text) { buildAssistantBubble(text); }
+    function revealAllAssistantTexts() { document.querySelectorAll('.msg.assistant').forEach(div => div.classList.remove('hide-text')); }
+
+    /* ========= ユーザー吹き出し & システム ========= */
+    function addMsg(role, text) {
+      const div = document.createElement('div'); div.className = 'msg ' + role; div.textContent = text; chatDiv.appendChild(div); chatDiv.scrollTop = chatDiv.scrollHeight;
+    }
+
+    /* ========= STT ========= */
+    let audioCtx = null, analyser = null, micStream = null, rafId = null; const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    function setRecUIRecording(on) { recStatusBox.classList.toggle('recording', !!on); recStateText.textContent = on ? '認識中…' : '停止中'; recToggleBtn.classList.toggle('on', !!on); recToggleBtn.setAttribute('aria-pressed', !!on); recToggleBtn.querySelector('.rec-label').textContent = on ? '停止' : '開始'; if (!on) { vizBars.forEach(b => b.style.height = '6px'); } }
+    async function initAudioViz() { if (!AudioContextClass) return; if (audioCtx && analyser) return; audioCtx = new AudioContextClass(); analyser = audioCtx.createAnalyser(); analyser.fftSize = 1024; analyser.smoothingTimeConstant = 0.85; }
+    async function startAudioViz() {
+      try {
+        await initAudioViz(); if (!audioCtx || !analyser) return; if (audioCtx.state === 'suspended') await audioCtx.resume(); if (!micStream) { micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }, video: false }); const track = micStream.getAudioTracks()[0]; if (track && typeof track.applyConstraints === 'function') { try { await track.applyConstraints({ echoCancellation: false, noiseSuppression: false, autoGainControl: false }); } catch (e) { console.warn('applyConstraints failed:', e); } } }
+        const source = audioCtx.createMediaStreamSource(micStream); source.connect(analyser); const data = new Uint8Array(analyser.frequencyBinCount); const bars = vizBars.length; function draw() { analyser.getByteTimeDomainData(data); let sum = 0; for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; } const rms = Math.sqrt(sum / data.length); const level = Math.max(0, Math.min(1, (rms - 0.02) * 1.8)); for (let i = 0; i < bars; i++) { const mult = 0.6 + i * 0.15; const h = Math.max(6, Math.min(20, 6 + level * mult * 20)); vizBars[i].style.height = h + 'px'; } rafId = requestAnimationFrame(draw); }
+        cancelAnimationFrame(rafId); rafId = requestAnimationFrame(draw);
+      } catch (err) { console.error(err); statusSubmit('マイク入力の初期化に失敗しました: ' + err.message, true); }
+    }
+    function stopAudioViz() { cancelAnimationFrame(rafId); rafId = null; if (analyser && audioCtx) { try { if (audioCtx.state !== 'closed') audioCtx.suspend(); } catch (_) { } } if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch (_) { } } micStream = null; vizBars.forEach(b => b.style.height = '6px'); }
+    function initRecognition() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { statusRun('STT (音声認識) はサポートされていません。'); recToggleBtn.disabled = true; return; } rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true; rec.onstart = () => { recognizing = true; setRecUIRecording(true); }; rec.onend = () => { recognizing = false; setRecUIRecording(false); stopAudioViz(); }; rec.onerror = e => { if (e.error !== 'no-speech' && e.error !== 'audio-capture') { statusSubmit('音声認識エラー: ' + e.error, true); } recognizing = false; setRecUIRecording(false); stopAudioViz(); };
+      rec.onresult = e => {
+        if (userInput.disabled) return;
+        if (Date.now() - ttsEndTime < 500) return; // TTS終了直後の入力は無視（エコー対策）
+        let finalText = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; } if (finalText) { const norm = normalizeFinalUtterance(finalText); if (userInput.value && !/\s$/.test(userInput.value)) userInput.value += ' '; userInput.value += norm; updateUI(); }
+      }
+    }
+    function toggleRecognition() { recognizing ? stopRecognition() : startRecognition(); }
+    async function startRecognition() { if (rec && !recognizing && !busy) { try { await startAudioViz(); rec.start(); } catch (_) { } } }
+    function stopRecognition() { if (rec && recognizing) { try { rec.stop(); } catch (_) { } } else { setRecUIRecording(false); stopAudioViz(); } }
+    function normalizeFinalUtterance(s) {
+      let t = String(s || '').trim();
+      if (!t) return '';
+      // 句読点変換マップ（文中のカンマ等は維持したいが、文末付与はしない）
+      const punctMap = { 'period': '.', 'full stop': '.', 'comma': ',', 'question mark': '?', 'exclamation mark': '!' };
+      const re = new RegExp('\\b(' + Object.keys(punctMap).join('|') + ')\\b', 'gi');
+      t = t.replace(re, (m) => punctMap[m.toLowerCase()] || m);
+      t = t.replace(/\s+/g, ' ').replace(/\s+([,.!?])/g, '$1').trim();
+      t = t.replace(/^[a-z]/, ch => ch.toUpperCase());
+      // ★ 文末の記号（. ! ?）は削除する（ユーザーがボタン等で確定するため）
+      t = t.replace(/[.!?]+$/, '');
+      return t;
+    }
+
+    /* ========= TTS：速度コントロール維持 ========= */
+    function populateVoicesUSGB() { const list = window.speechSynthesis.getVoices() || []; voices = list.filter(v => /^en-(US|GB)/i.test(v.lang)); voiceReady = voices.length > 0; voiceSelect.innerHTML = ''; if (!voiceReady) { const o = document.createElement('option'); o.textContent = '（TTS非対応）'; voiceSelect.appendChild(o); return; } voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; voiceSelect.appendChild(o); }); voiceSelect.selectedIndex = 0; }
+    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(false); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(el('aiRate').value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
+    async function speakGuarded(text, after) { await addAssistantBubbleWithAutoTTS(text); if (typeof after === 'function') after(); }
+
+    /* ========= TTSとSTTの連携 ========= */
+    function stopRecognitionAndWait(waitMs = TTS_STOP_WAIT_MS) { return new Promise(resolve => { const after = () => setTimeout(resolve, waitMs); if (rec && recognizing) { const prevOnEnd = rec.onend; rec.onend = (e) => { try { if (prevOnEnd) prevOnEnd(e); } catch (_) { } recognizing = false; setRecUIRecording(false); stopAudioViz(); rec.onend = prevOnEnd; after(); }; try { rec.stop(); } catch (_) { after(); } } else { after(); } }); }
+    async function beginTTS(enableResume) {
+      // 入力ブロック開始
+      userInput.disabled = true;
+      userInput.dataset.originalPlaceholder = userInput.placeholder;
+      userInput.placeholder = 'AIが発話中...';
+
+      // マイクミュート（Safety: Hardware/Visual）
+      if (micStream) {
+        try { micStream.getAudioTracks().forEach(t => t.enabled = false); } catch (e) { console.warn(e); }
+      }
+      // Audioミュート（Safety: STT Engine）
+      if (rec) {
+        try { rec.abort(); } catch (_) { } // stop()ではなくabort()でバッファを破棄
+      }
+
+      // enableResume が false の場合は必ずフラグを下ろす（意図しない再開を防ぐ）
+      _resumeRecAfterTTS = !!enableResume;
+      await stopRecognitionAndWait();
+    }
+
+    function endTTS() {
+      // 入力ブロック解除
+      userInput.disabled = false;
+      if (userInput.dataset.originalPlaceholder) {
+        userInput.placeholder = userInput.dataset.originalPlaceholder;
+      }
+      userInput.focus();
+
+      const shouldResume = _resumeRecAfterTTS && phase !== 'done';
+      _resumeRecAfterTTS = false;
+      ttsEndTime = Date.now(); // 終了時刻記録
+      if (shouldResume) {
+        setTimeout(() => {
+          if (rec && !recognizing) startRecognition();
+        }, TTS_TAIL_BUFFER_MS);
+      }
+    }
+
+    /* ========= 役割・ラベル ========= */
+    function updateRoleBadges() {
+      if (!currentRow) { el('userRoleBadge').textContent = 'User: —'; el('aiRoleBadge').textContent = 'AI: —'; return; }
+      if (roleLockedToA) {
+        el('userRoleBadge').textContent = 'User: B';
+        el('aiRoleBadge').textContent = 'AI: A';
+        return;
+      }
+      const selected = userRoleSel.value || currentRow.roleA || 'A';
+      const ai = (selected === (currentRow.roleA || 'A')) ? (currentRow.roleB || 'B') : (currentRow.roleA || 'A');
+      el('userRoleBadge').textContent = 'User: ' + selected;
+      el('aiRoleBadge').textContent = 'AI: ' + ai;
+    }
+    function updateFirstLineHintForRole() {
+      if (!currentRow) { firstLineHint.textContent = ''; return; }
+      if (roleLockedToA) { // ユーザー=B固定。Bの最初のセリフが欠落している可能性が高い。
+        const first = currentRow.roleBFirst || '';
+        firstLineHint.textContent = first ? `最初のセリフ（参考）：${first}` : '';
+        return;
+      }
+      const userIsA = (userRoleSel.value || (currentRow.roleA || 'A')) === (currentRow.roleA || 'A');
+      const first = userIsA ? (currentRow.roleAFirst || '') : (currentRow.roleBFirst || '');
+      firstLineHint.textContent = first ? `最初のセリフ（参考）：${first}` : '';
+    }
+
+    /* ========= 書類（Books/Units/Problems） ========= */
+    function updateBooks(data) {
+      const list = Array.isArray(data) ? data : (data && data.books ? data.books : []);
+      const defaultBookId = (data && data.defaultBookId) || '';
+      books = list || [];
+      bookSelect.innerHTML = '';
+      books.forEach(b => {
+        const o = document.createElement('option');
+        o.value = b.id;
+        o.textContent = b.name;
+        o.dataset.name = b.name;
+        bookSelect.appendChild(o);
+      });
+      if (books.length) {
+        const idx = defaultBookId ? books.findIndex(b => b.id === defaultBookId) : 0;
+        bookSelect.selectedIndex = idx >= 0 ? idx : 0;
+        currentBook = books[bookSelect.selectedIndex];
+        onBookChange();
+      }
+    }
+    function onBookChange() { currentBook = books.find(b => b.id === bookSelect.value) || null; unitSelect.innerHTML = ''; problemSelect.innerHTML = ''; resetProblemDetails(); if (!currentBook) return; setBusy(true); google.script.run.withSuccessHandler(updateUnits).withFailureHandler(err => { setBusy(false); statusSubmit(err.message, true); }).listThemeUnitsCached(currentBook.id, forceFetch); }
+    function updateUnits(data) { setBusy(false); units = data || []; unitSelect.innerHTML = ''; units.forEach(u => { const o = document.createElement('option'); o.value = u; o.textContent = u; unitSelect.appendChild(o); }); if (units.length) { unitSelect.selectedIndex = 0; currentUnit = units[0]; onUnitChange(); } }
+    function onUnitChange() { currentUnit = unitSelect.value || null; problemSelect.innerHTML = ''; resetProblemDetails(); if (!currentBook || !currentUnit) return; setBusy(true); google.script.run.withSuccessHandler(updateProblems).withFailureHandler(err => { setBusy(false); statusSubmit(err.message, true); }).listThemeProblemsCached(currentBook.id, currentUnit, forceFetch); }
+    function updateProblems(data) { setBusy(false); problems = data || []; problemSelect.innerHTML = ''; problems.forEach(p => { const o = document.createElement('option'); o.value = p.rowIndex; o.textContent = `${p.serial || p.rowIndex}. ${p.title}`; problemSelect.appendChild(o); }); if (problems.length) { problemSelect.selectedIndex = 0; currentRow = problems[0]; onProblemChange(); } forceFetch = false; }
+    function onProblemChange() {
+      currentRow = problems.find(p => p.rowIndex == problemSelect.value) || null;
+      resetProblemDetails(); if (!currentRow) return;
+      displayText.value = currentRow.prompt || currentRow.displayText || '';
+
+      // ★ 役割B/Bの最初のセリフが参照できない場合 ⇒ AI=A固定、ユーザー変更不可
+      const hasB = !!(currentRow.roleB && String(currentRow.roleB).trim());
+      const hasBFirst = !!(currentRow.roleBFirst && String(currentRow.roleBFirst).trim());
+      roleLockedToA = !(hasB && hasBFirst);
+
+      userRoleSel.innerHTML = '';
+      if (roleLockedToA) {
+        const o = document.createElement('option'); o.value = 'B'; o.textContent = 'B'; userRoleSel.appendChild(o);
+        userRoleSel.value = 'B';
+        userRoleSel.disabled = true;
+        roleLockNote.classList.remove('hidden');
+        roleNormalNote.classList.add('hidden');
+      } else {
+        const rA = currentRow.roleA || 'A', rB = currentRow.roleB || 'B';
+        [rA, rB].forEach((r, i) => { const o = document.createElement('option'); o.value = r; o.textContent = r; if (i === 0) o.selected = true; userRoleSel.appendChild(o); });
+        userRoleSel.disabled = false;
+        roleLockNote.classList.add('hidden');
+        roleNormalNote.classList.remove('hidden');
+      }
+
+      updateRoleBadges();
+      updateFirstLineHintForRole();
+      populateVoicesUSGB();
+      updateUI();
+    }
+    function onRoleChange() { updateRoleBadges(); updateFirstLineHintForRole(); }
+    function resetProblemDetails() { displayText.value = ''; firstLineHint.textContent = ''; userRoleSel.innerHTML = ''; el('userRoleBadge').textContent = 'User: —'; el('aiRoleBadge').textContent = 'AI: —'; roleLockNote.classList.add('hidden'); roleNormalNote.classList.remove('hidden'); roleLockedToA = false; }
+
+    /* ========= 会話フェーズ ========= */
+    function updatePhaseButton() { btnPhase.disabled = busy || !isLoggedIn() || configNotSet(); btnPhase.classList.remove('btn-danger', 'btn-warning', 'btn-success', 'btn-primary'); if (phase === 'start') { btnPhase.textContent = '英会話開始（＋初回の音声認識開始）'; btnPhase.classList.add('btn-danger'); } else if (phase === 'feedback') { btnPhase.textContent = '英会話を終了＆フィードバック'; btnPhase.classList.add('btn-warning'); } else if (phase === 'submit') { btnPhase.textContent = '提出（忘れずに）'; btnPhase.classList.add('btn-success'); } else { btnPhase.textContent = '提出完了'; btnPhase.classList.add('btn-primary'); btnPhase.disabled = true; } }
+    function onPhaseClick() {
+      if (busy) return;
+      if (phase === 'start') return startConversationFlow();
+      if (phase === 'feedback') return doFeedbackFlow();
+      if (phase === 'submit') return onSubmit();
+    }
+    function startConversationFlow() {
+      if (busy) return;
+      if (configNotSet()) { statusSubmit('GAS_URL を設定してください。', true); return; }
+      if (!isLoggedIn()) { statusSubmit('先にログインしてください。', true); return; }
+      if (!currentBook || !currentUnit || !currentRow) { statusSubmit('ブック・単元・英会話を選んでください。', true); return; } if (!userRoleSel.value) { statusSubmit('あなたの役割を選んでください。', true); return; }
+      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const sysMsg = `Conversation started.\nLevel: ${cefr.value}\nTheme: ${currentBook.name} / ${currentUnit} / ${currentRow.title}\nYour Role: ${effectiveUserRole}`;
+      messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = true; firstUserSent = false; addMsg('system', sysMsg); selectorsFrozen = true;
+      beginButtonLoading(btnPhase, '開始中…');
+      setBusy(true, 'AIが考え中…'); showAiThinking();
+      google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
+        setBusy(false);
+        if (res) {
+          // ★ AIの最初のセリフを履歴に追加
+          messages.push({ role: 'assistant', content: res });
+          speakGuarded(res);
+        } else {
+          startRecognition();
+        }
+        phase = 'feedback'; updatePhaseButton(); updateUI();
+      })
+        .withFailureHandler(err => { endButtonLoading(btnPhase); setBusy(false); statusSubmit(err.message, true); })
+        .startConversation(messages, cefr.value, currentRow, effectiveUserRole);
+    }
+    function doFeedbackFlow() {
+      if (busy) return;
+      if (messages.filter(m => m.role === 'user').length === 0) { statusSubmit('フィードバックするには、最低1回は発話してください。', true); return; }
+      revealAllAssistantTexts();
+      const ok = window.confirm('本当に英会話を終了し、フィードバックを受け取りますか？\n（これ以降、会話は続けられません）'); if (!ok) return;
+      beginButtonLoading(btnPhase, '生成中…');
+      setBusy(true, 'フィードバックを生成中…'); showAiThinking('フィードバックを生成中'); stopRecognition();
+      const tip = (currentRow && currentRow.preFeedbackTip) || ''; if (tip && !preFBShown) { addMsg('system', 'フィードバック直前のヒント：\n' + tip); preFBShown = true; }
+      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      // Feedback用メタデータ
+      const extraMeta = {
+        studentName: gIdentity.name,
+        studentId4: gIdentity.id4,
+        bookName: currentBook ? currentBook.name : '',
+        unitName: currentUnit || ''
+      };
+      google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
+        setBusy(false);
+        returnedFB = res || '';
+        addMsg('system', returnedFB);
+        statusSubmit('フィードバックを受け取りました。最後に「提出」を押してください。', false);
+        phase = 'submit';
+        updatePhaseButton();
+        updateUI();
+      })
+        .withFailureHandler(err => { endButtonLoading(btnPhase); setBusy(false); statusSubmit(err.message, true); })
+        .getFeedback(messages, cefr.value, currentRow, effectiveUserRole, extraMeta);
+    }
+
+    /* ========= ユーザー送信 ========= */
+    /* ========= ユーザー送信 ========= */
+    function onSend(suffix) {
+      // 末尾に suffix (./?) を付与して送信
+      let text = (userInput.value || '').trim();
+      if (!text || busy || phase !== 'feedback') { return; }
+
+      // 既に末尾に同じ記号があるかチェック（二重付与防止）
+      if (suffix && !text.endsWith(suffix)) {
+        text += suffix;
+      }
+
+      if (!firstUserSent) { firstUserSent = true; firstLineHint.textContent = ''; }
+      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      const sendBtn = suffix === '?' ? btnSendQuestion : btnSendPeriod;
+      messages.push({ role: 'user', content: text }); addMsg('user', text); userInput.value = '';
+      beginButtonLoading(sendBtn, '送信中…');
+      setBusy(true, 'AIが考え中…'); showAiThinking(); updateUI(); scrollToBottomIfEnabled(); stopRecognition();
+      google.script.run.withSuccessHandler(res => {
+        endButtonLoading(sendBtn);
+        setBusy(false);
+        const reply = res || '';
+        if (reply) {
+          messages.push({ role: 'assistant', content: reply });
+          speakGuarded(reply);
+        } else {
+          startRecognition();
+        }
+      })
+        .withFailureHandler(err => { endButtonLoading(sendBtn); setBusy(false); statusSubmit(err.message, true); startRecognition(); })
+        .continueConversation(messages, cefr.value, currentRow, effectiveUserRole);
+    }
+
+    /* ========= 提出 ========= */
+    async function onSubmit() {
+      if (busy || hasSubmitted || !returnedFB) { statusSubmit('提出できません。FBを先に取得してください。', true); return; }
+      if (!isLoggedIn()) { statusSubmit('提出前にログインしてください。', true); return; }
+      const ok = window.confirm(`以下の情報で提出します。よろしいですか？\n\n本人情報： ${identBadge.textContent}\n課題： ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n\n（注意：提出は1回限りです）`); if (!ok) return;
+      beginButtonLoading(btnPhase, '提出中…');
+      setBusy(true, '提出中…'); hasSubmitted = true; statusSubmit('提出中…', false); const clipboardText = formatForClipboard(); stopRecognition();
+      const effectiveUserRole = roleLockedToA ? 'B' : userRoleSel.value; // ★
+      google.script.run.withSuccessHandler(res => {
+        endButtonLoading(btnPhase);
+        setBusy(false);
+        statusSubmit('提出が完了しました： ' + res.fileName, false);
+        tryShowClipboard(clipboardText);
+        // ▼ 提出後リンクの反映・表示
+        const footer = document.getElementById('afterSubmitLink');
+        if (footer) {
+          const a = footer.querySelector('a');
+          if (a && res && res.afterSubmitLink && res.afterSubmitLink.show) {
+            a.href = res.afterSubmitLink.url || a.href;
+            a.textContent = res.afterSubmitLink.text || a.textContent;
+          }
+          footer.classList.remove('hidden');
+        }
+        phase = 'done';
+        updatePhaseButton();
+        updateUI();
+      })
+        .withFailureHandler(err => {
+          endButtonLoading(btnPhase);
+          setBusy(false);
+          hasSubmitted = false;
+          statusSubmit('提出エラー：' + err.message, true);
+          updatePhaseButton();
+          updateUI();
+        })
+        .submitTask(gIdentity, currentBook.name, currentUnit, currentRow, messages, returnedFB, cefr.value, effectiveUserRole);
+    }
+    function formatForClipboard() { const roleA = (currentRow && currentRow.roleA) || 'A', roleB = (currentRow && currentRow.roleB) || 'B'; const userR = roleLockedToA ? 'B' : userRoleSel.value; const aiR = (userR === roleA) ? roleB : roleA; let s = '■ 英会話ログ\n================\n'; s += `[課題] ${currentBook.name} / ${currentUnit} / ${currentRow.title}\n[役割] ${userR}\n[CEFR] ${cefr.value}\n----------------\n`; for (const m of messages) { if (m.role === 'user') s += `User (${userR}): ${m.content}\n\n`; else if (m.role === 'assistant') s += `AI (${aiR}): ${m.content}\n\n`; } s += '\n■ フィードバック\n================\n' + (returnedFB || '(なし)'); return s; }
+    async function tryShowClipboard(txt) { if (!txt) return; await new Promise(r => setTimeout(r, 500)); const ok = window.confirm('このやりとりとフィードバックの文字情報をコピー＆ペーストしますか？'); if (ok) { try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(txt); } else { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); } statusSubmit('会話＋フィードバックをクリップボードにコピーしました。', false); } catch (_) { } } }
+
+    /* ========= リスタート ========= */
+    function restartSameSelection() { try { window.speechSynthesis.cancel(); } catch (_) { } stopRecognition(); messages = []; chatDiv.innerHTML = ''; returnedFB = ''; hasSubmitted = false; hasStarted = false; preFBShown = false; selectorsFrozen = false; firstUserSent = false; statusSubmit(''); phase = 'start'; updatePhaseButton(); updateFirstLineHintForRole(); updateUI(); statusRun(''); }
+    async function refreshThemesOnly() {
+      if (busy) return;
+      try { window.speechSynthesis.cancel(); } catch (_) { }
+      stopRecognition();
+      messages = []; chatDiv.innerHTML = '';
+      returnedFB = ''; hasSubmitted = false; hasStarted = false; preFBShown = false;
+      selectorsFrozen = false; firstUserSent = false;
+      phase = 'start'; updatePhaseButton(); statusSubmit('');
+
+      // フッター非表示
+      const footer = document.getElementById('afterSubmitLink');
+      if (footer) footer.classList.add('hidden');
+
+      // ★ 強制再取得
+      beginButtonLoading(btnRefresh, '更新中…');
+      setBusy(true, 'テーマを更新中…');
+      forceFetch = true;
+      google.script.run
+        .withSuccessHandler(booksRes => {
+          endButtonLoading(btnRefresh);
+          updateBooks(booksRes || []);
+          cefr.value = 'A2';
+          setBusy(false);
+          statusRun('');
+        })
+        .withFailureHandler(err => {
+          endButtonLoading(btnRefresh);
+          setBusy(false);
+          statusRun('ブック読み直しエラー：' + err.message);
+          statusSubmit(err.message, true);
+        })
+        .listThemeBooksCached(true); // ★ キャッシュ無視
+    }
+    const footer = document.getElementById('afterSubmitLink');
+    if (footer) footer.classList.add('hidden');
+    /* ========= TTS初期化 ========= */
+    function initTTS() { function load() { populateVoicesUSGB(); } if ('speechSynthesis' in window) { if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = load; load(); } else { statusRun('TTS (音声読み上げ) はサポートされていません。'); voiceSelect.disabled = true; } }
+
+    /* ========= 初期化 ========= */
+    async function initApp() {
+      await initAuthUI();
+
+      // イベント（ロック中でも登録しておく）
+      bookSelect.addEventListener('change', onBookChange);
+      unitSelect.addEventListener('change', onUnitChange);
+      problemSelect.addEventListener('change', onProblemChange);
+      userRoleSel.addEventListener('change', () => { onRoleChange(); });
+      btnPhase.addEventListener('click', onPhaseClick);
+      btnRestart.addEventListener('click', restartSameSelection);
+      btnSendPeriod.addEventListener('click', () => onSend('.'));
+      btnSendQuestion.addEventListener('click', () => onSend('?'));
+      userInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend('.'); } });
+      userInput.addEventListener('input', updateUI);
+      btnRecToggle.addEventListener('click', toggleRecognition);
+      btnRefresh.addEventListener('click', refreshThemesOnly);
+      const btnDiagnose = el('btnDiagnose');
+      if (btnDiagnose) btnDiagnose.addEventListener('click', runGASDiagnostic);
+      if (GAS_DEBUG) { const p = el('diagnosePanel'); if (p) p.classList.remove('hidden'); }
+      if (loginForm) loginForm.addEventListener('submit', onAuthLoginSubmit);
+      if (firstLoginForm) firstLoginForm.addEventListener('submit', onFirstLoginSubmit);
+      if (authTabBtnLogin) authTabBtnLogin.addEventListener('click', () => switchAuthTab('login'));
+      if (authTabBtnFirstLogin) authTabBtnFirstLogin.addEventListener('click', () => switchAuthTab('first'));
+      const btnLogout = el('btnLogout');
+      if (btnLogout) btnLogout.addEventListener('click', logout);
+      const btnLogoutToolbar = el('btnLogoutToolbar');
+      if (btnLogoutToolbar) btnLogoutToolbar.addEventListener('click', logout);
+      const btnRecheckLock = el('btnRecheckLock');
+      if (btnRecheckLock) btnRecheckLock.addEventListener('click', onRecheckLock);
+      initTTS(); initRecognition();
+
+      if (isClientLocked()) {
+        refreshIdentityBadges();
+        updateUI();
+        return;
+      }
+
+      if (configNotSet()) {
+        statusSubmit('設定未完了: GAS_URL を設定してください。', true);
+      }
+
+      await restoreSessionIfAny();
+      refreshIdentityBadges();
+
+      if (!isLoggedIn()) {
+        updateUI();
+        updatePhaseButton();
+        return;
+      }
+
+      setBusy(true);
+      try {
+        if (!configNotSet()) {
+          const booksRes = await callGAS('list_books', { forceUpdate: false });
+          updateBooks(booksRes || []);
+          cefr.value = 'A2';
+          statusRun('');
+        }
+      } catch (err) {
+        let msg = err.message || String(err);
+        if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+          const hint = location.protocol === 'file:' ? ' ※ file://では動作しません。GitHub Pages やローカルサーバー（例: npx serve）で開いてください。' : ' ※ GASのデプロイURL・「全員に公開」設定を確認してください。';
+          msg = '接続失敗（CORS/ネットワーク）' + hint;
+        }
+        statusRun('ブック読み込みエラー：' + msg);
+        statusSubmit(msg, true);
+      } finally {
+        setBusy(false);
+        updateUI();
+        updatePhaseButton();
+      }
+    }
+
+    window.addEventListener('load', initApp);
+  </script>
+</body>
+
+</html>
