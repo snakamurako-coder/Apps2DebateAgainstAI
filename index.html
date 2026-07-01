@@ -378,6 +378,87 @@
       padding: 0.25rem 0.4rem;
     }
 
+    .debate-ai-side-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.75rem 1rem;
+      margin-bottom: 0.75rem;
+      padding: 0.65rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      background: #fafbfc;
+    }
+
+    .debate-ai-side-row .side-switch-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+    }
+
+    .debate-ai-side-label {
+      font-weight: 600;
+      margin: 0;
+      white-space: nowrap;
+    }
+
+    .side-switch-hint {
+      font-size: var(--font-size-sm);
+      font-weight: 600;
+      opacity: 0.45;
+      transition: opacity 0.2s;
+      white-space: nowrap;
+    }
+
+    .side-switch-hint.active {
+      opacity: 1;
+    }
+
+    .side-switch {
+      position: relative;
+      display: inline-block;
+      width: 3.25rem;
+      height: 1.75rem;
+      flex-shrink: 0;
+    }
+
+    .side-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .side-switch-slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: linear-gradient(90deg, var(--opp-color) 0%, var(--opp-color) 50%, var(--gov-color) 50%, var(--gov-color) 100%);
+      border-radius: 999px;
+      transition: box-shadow 0.2s;
+    }
+
+    .side-switch-slider::before {
+      content: '';
+      position: absolute;
+      height: 1.35rem;
+      width: 1.35rem;
+      left: 0.2rem;
+      bottom: 0.2rem;
+      background: #fff;
+      border-radius: 50%;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+      transition: transform 0.22s ease;
+    }
+
+    .side-switch input:checked + .side-switch-slider::before {
+      transform: translateX(1.45rem);
+    }
+
+    .side-switch input:disabled + .side-switch-slider {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
     .debate-progress-banner {
       padding: var(--spacing-3);
       border-radius: var(--border-radius);
@@ -1165,7 +1246,19 @@
       </div>
       <div>
         <label>スピーチ担当割当</label>
-        <button type="button" id="btnFillMyName" class="btn-secondary" style="width:auto;margin-bottom:.5rem;">ログイン名を肯定派に一括設定</button>
+        <div class="debate-ai-side-row">
+          <span class="debate-ai-side-label">AIの側</span>
+          <div class="side-switch-wrap">
+            <span class="side-switch-hint side-opp active" id="debateAiSideOppLabel">否定派</span>
+            <label class="side-switch" title="AIが担当する側を切り替え">
+              <input type="checkbox" id="debateAiSideSwitch" aria-label="AIの側を否定派と肯定派で切り替え">
+              <span class="side-switch-slider"></span>
+            </label>
+            <span class="side-switch-hint side-gov" id="debateAiSideGovLabel">肯定派</span>
+          </div>
+          <span class="small" id="debateAiSideHint">人間は反対側を担当（表で個別調整可）</span>
+        </div>
+        <button type="button" id="btnFillMyName" class="btn-secondary" style="width:auto;margin-bottom:.5rem;">ログイン名を人間側に一括設定</button>
         <div style="overflow-x:auto;">
           <table class="assign-table" id="assignTable">
             <thead>
@@ -2705,17 +2798,43 @@
     /* ========= ディベートモード ========= */
     function getDebateFlowStep(idx) { return DEBATE_FLOW[idx] || null; }
 
-    function getDefaultDebateAssignments() {
+    function getDebateAiSide() {
+      const sw = el('debateAiSideSwitch');
+      return sw && sw.checked ? 'gov' : 'opp';
+    }
+
+    function setDebateAiSide(side) {
+      const sw = el('debateAiSideSwitch');
+      if (sw) sw.checked = side === 'gov';
+      updateDebateAiSideSwitchUi();
+    }
+
+    function updateDebateAiSideSwitchUi() {
+      const side = getDebateAiSide();
+      const govLabel = el('debateAiSideGovLabel');
+      const oppLabel = el('debateAiSideOppLabel');
+      const hint = el('debateAiSideHint');
+      if (govLabel) govLabel.classList.toggle('active', side === 'gov');
+      if (oppLabel) oppLabel.classList.toggle('active', side === 'opp');
+      if (hint) {
+        hint.textContent = side === 'gov'
+          ? 'AI＝肯定派 · 人間＝否定派（表で個別調整可）'
+          : 'AI＝否定派 · 人間＝肯定派（表で個別調整可）';
+      }
+    }
+
+    function getDefaultDebateAssignments(aiSide) {
+      const aiOnSide = aiSide || getDebateAiSide();
       const name = gIdentity.name || (gIdentity.email ? gIdentity.email.split('@')[0] : 'Student');
       const speechIds = ['PM', 'LO', 'MG', 'MO', 'OR', 'GR'];
       return speechIds.map(id => {
         const step = DEBATE_FLOW.find(s => s.id === id);
-        const isGov = step && step.side === 'gov';
+        const isAiSide = step && step.side === aiOnSide;
         return {
           speechId: id,
           side: step ? step.side : 'gov',
-          assigneeType: isGov ? 'human' : 'ai',
-          speakerName: isGov ? name : 'AI'
+          assigneeType: isAiSide ? 'ai' : 'human',
+          speakerName: isAiSide ? 'AI' : name
         };
       });
     }
@@ -2760,11 +2879,21 @@
       });
     }
 
-    function fillMyNameToGov() {
+    function fillMyNameToHumanSide() {
       const name = gIdentity.name || (gIdentity.email ? gIdentity.email.split('@')[0] : '');
       if (!name) { statusSubmit('ログイン名が取得できません', true); return; }
+      debateAssignments = readAssignmentsFromTable();
+      debateAssignments.forEach(a => {
+        if (a.assigneeType === 'human') a.speakerName = name;
+      });
+      renderAssignmentTable();
+    }
+
+    function onDebateAiSideSwitchChange() {
+      if (debateSelectorsFrozen || (debatePhase !== 'setup' && debatePhase !== 'done')) return;
       debateAssignments = getDefaultDebateAssignments();
       renderAssignmentTable();
+      updateDebateAiSideSwitchUi();
     }
 
     function applyAppModeVisibility() {
@@ -3037,6 +3166,8 @@
       el('debateSetSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
       const debateCefrEl = el('debateCefr');
       if (debateCefrEl) debateCefrEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
+      const aiSideSw = el('debateAiSideSwitch');
+      if (aiSideSw) aiSideSw.disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('btnFillMyName').disabled = busy || debateSelectorsFrozen || running || authLocked;
       const step = getDebateFlowStep(debateStepIndex);
       const assign = getCurrentDebateAssignment();
@@ -3048,6 +3179,7 @@
       el('btnDebateRecToggle').disabled = busy || !isHumanTurn || isPrep || speakingNow;
       updateDebatePhaseButton();
       updateDebateProgressBanner();
+      updateDebateAiSideSwitchUi();
     }
 
     async function startDebateFlow() {
@@ -3060,7 +3192,7 @@
       debateStepIndex = 0;
       debateSelectorsFrozen = true;
       renderAssignmentTable();
-      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nディベートを開始します。`);
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
       debatePhase = 'running';
       updateDebateUI();
       await advanceDebateStep();
@@ -3368,7 +3500,9 @@
       el('debateBookSelect').addEventListener('change', onDebateBookChange);
       el('debateUnitSelect').addEventListener('change', onDebateUnitChange);
       el('debateSetSelect').addEventListener('change', onDebateSetChange);
-      el('btnFillMyName').addEventListener('click', fillMyNameToGov);
+      el('btnFillMyName').addEventListener('click', fillMyNameToHumanSide);
+      const aiSideSw = el('debateAiSideSwitch');
+      if (aiSideSw) aiSideSw.addEventListener('change', onDebateAiSideSwitchChange);
       el('btnDebatePhase').addEventListener('click', onDebatePhaseClick);
       el('btnDebatePrepDone').addEventListener('click', onDebatePrepDone);
       el('btnDebateRestart').addEventListener('click', restartDebateSameSelection);
@@ -3377,8 +3511,10 @@
       el('debateUserInput').addEventListener('keydown', e => {
         if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onDebateHumanSend(); }
       });
+      setDebateAiSide('opp');
       debateAssignments = getDefaultDebateAssignments();
       renderAssignmentTable();
+      updateDebateAiSideSwitchUi();
       const btnDiagnose = el('btnDiagnose');
       if (btnDiagnose) btnDiagnose.addEventListener('click', runGASDiagnostic);
       if (GAS_DEBUG) { const p = el('diagnosePanel'); if (p) p.classList.remove('hidden'); }
