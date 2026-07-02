@@ -47,7 +47,7 @@ const DEBATE_BOOK_SAMPLE_ROW = [
   1, 1, 1.0,
   'Judge on argument quality, rebuttal, and structure. Do not mention human vs AI.',
   'PM (Government): Exactly 2 reasons with examples in OREO format.',
-  'LO (Opposition): Briefly rebut PM, then exactly 2 reasons with examples in OREO format.',
+  'LO (Opposition): Exactly 2 reasons with examples in OREO format.',
   'MG: Rebut LO with at least 2 points, then defend PM case with 1 extension.',
   'MO: Rebut MG with at least 2 points, then extend opposition case with 1 point.',
   'OR: Summary only, no new arguments.',
@@ -1759,7 +1759,7 @@ function buildDebateSpeechPrompt_(row, speechId, side, cefr) {
   const typeRules = {
     constructive: speechId === 'PM'
       ? 'Constructive (PM): OREO format. State your opinion, give exactly 2 reasons with one brief example each, restate your opinion.'
-      : 'Constructive (LO): Briefly rebut the PM, then OREO with exactly 2 reasons with one brief example each.',
+      : 'Constructive (LO): OREO format. State your opinion, give exactly 2 reasons with one brief example each, restate your opinion. Do NOT rebut the PM in this speech.',
     rebuttal: 'Rebuttal: Address at least 2 opposing arguments, then defend and extend your side with 1 supporting point.',
     reply: 'Reply: Summarize the debate. NO new arguments. Explain why your side wins.'
   };
