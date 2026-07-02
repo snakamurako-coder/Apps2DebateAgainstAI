@@ -459,6 +459,62 @@
       cursor: not-allowed;
     }
 
+    .assign-table .assign-task {
+      min-width: 12rem;
+      max-width: 22rem;
+      line-height: 1.45;
+      font-size: var(--font-size-sm);
+    }
+
+    .assign-table tr.assign-row-current {
+      background: #fff9e6;
+      box-shadow: inset 0 0 0 2px #ffc107;
+    }
+
+    .debate-input-tools {
+      align-items: stretch;
+      gap: 0.65rem;
+    }
+
+    .debate-current-task {
+      flex: 1 1 14rem;
+      min-width: 0;
+      padding: 0.55rem 0.75rem;
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border-color);
+      background: #fafbfc;
+      font-size: var(--font-size-sm);
+      line-height: 1.45;
+    }
+
+    .debate-current-task.hidden {
+      display: none;
+    }
+
+    .debate-current-task-role {
+      font-weight: 700;
+      margin-bottom: 0.3rem;
+      color: var(--text-color);
+    }
+
+    .debate-current-task-body {
+      color: var(--text-color-muted);
+    }
+
+    .debate-current-task.debate-task-human {
+      border-color: var(--primary-color);
+      background: #f0f8ff;
+    }
+
+    .debate-current-task.debate-task-human .debate-current-task-body {
+      color: var(--text-color);
+    }
+
+    .debate-current-task.debate-task-prep {
+      border-color: #e6a800;
+      background: #fffbf0;
+    }
+
     .debate-progress-banner {
       padding: var(--spacing-3);
       border-radius: var(--border-radius);
@@ -1262,7 +1318,7 @@
         <div style="overflow-x:auto;">
           <table class="assign-table" id="assignTable">
             <thead>
-              <tr><th>順</th><th>役割</th><th>側</th><th>担当</th><th>氏名</th></tr>
+              <tr><th>順</th><th>スピーカーの役割</th><th>英語名</th><th>時間</th><th>担当</th><th>氏名</th><th>やること</th></tr>
             </thead>
             <tbody id="assignTableBody"></tbody>
           </table>
@@ -1302,7 +1358,7 @@
       <h2>あなたのスピーチ</h2>
       <div>
         <label>音声認識・発話</label>
-        <div class="input-row">
+        <div class="input-row debate-input-tools">
           <button id="btnDebateRecToggle" class="btn-secondary btn-icon rec-btn" title="音声認識 開始/停止" aria-pressed="false">
             <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 14 0h-2zM11 19h2v3h-2z" />
@@ -1312,9 +1368,13 @@
           <div id="debateRecStatusBox" class="recbox" role="status">
             <div class="recbox-left"><span id="debateRecStateText">停止中</span></div>
           </div>
-          <button id="btnDebateSend" class="btn-primary send-btn" style="flex:2;">
+          <button id="btnDebateSend" class="btn-primary send-btn" style="flex:0 1 auto;min-width:7rem;">
             <span>スピーチ送信</span>
           </button>
+          <div id="debateCurrentTask" class="debate-current-task hidden" aria-live="polite">
+            <div id="debateCurrentTaskRole" class="debate-current-task-role"></div>
+            <div id="debateCurrentTaskBody" class="debate-current-task-body"></div>
+          </div>
         </div>
       </div>
       <div>
@@ -1522,14 +1582,46 @@
     let debateTimerId = null, debateTimerEnd = 0;
 
     const DEBATE_FLOW = [
-      { id: 'PM', side: 'gov', label: 'Prime Minister', sideJa: '肯定派', secKey: 'pmSec' },
-      { id: 'LO', side: 'opp', label: 'Leader of Opposition', sideJa: '否定派', secKey: 'loSec' },
-      { id: 'PREP1', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep1Sec' },
-      { id: 'MG', side: 'gov', label: 'Member of Government', sideJa: '肯定派', secKey: 'mgSec' },
-      { id: 'MO', side: 'opp', label: 'Member of Opposition', sideJa: '否定派', secKey: 'moSec' },
-      { id: 'PREP2', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep2Sec' },
-      { id: 'OR', side: 'opp', label: 'Opposition Reply', sideJa: '否定派', secKey: 'orSec' },
-      { id: 'GR', side: 'gov', label: 'Government Reply', sideJa: '肯定派', secKey: 'grSec' }
+      {
+        id: 'PM', side: 'gov', label: 'Prime Minister', sideJa: '肯定派', secKey: 'pmSec',
+        roleJa: '肯定派：1人目（立論）',
+        taskJa: '事前に書いたOREOをそのまま読み上げ、自分たちの主張の柱を作る。'
+      },
+      {
+        id: 'LO', side: 'opp', label: 'Leader of Opposition', sideJa: '否定派', secKey: 'loSec',
+        roleJa: '否定派：1人目（立論）',
+        taskJa: '自分たちのOREOを読み上げつつ、肯定派の理由への反論も少し混ぜる。'
+      },
+      {
+        id: 'PREP1', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep1Sec',
+        roleJa: '（作戦タイム）', enLabel: 'Preparation Time',
+        taskJa: '相手の立論を聞いて、どう反論するかチームで相談する。'
+      },
+      {
+        id: 'MG', side: 'gov', label: 'Member of Government', sideJa: '肯定派', secKey: 'mgSec',
+        roleJa: '肯定派：2人目（反論・防衛）',
+        taskJa: '否定派の意見に反論（Rebuttal）し、自分たちの1人目の意見をサポートする。'
+      },
+      {
+        id: 'MO', side: 'opp', label: 'Member of Opposition', sideJa: '否定派', secKey: 'moSec',
+        roleJa: '否定派：2人目（反論・防衛）',
+        taskJa: '肯定派の2人目に反論し、自分たちの主張の方が正しい理由をダメ押しする。'
+      },
+      {
+        id: 'PREP2', type: 'prep', label: '作戦タイム', sideJa: '—', secKey: 'prep2Sec',
+        roleJa: '（作戦タイム）', enLabel: 'Preparation Time',
+        taskJa: '最後の総括スピーチの準備。'
+      },
+      {
+        id: 'OR', side: 'opp', label: 'Opposition Reply', sideJa: '否定派', secKey: 'orSec',
+        roleJa: '否定派：3人目（総括）',
+        taskJa: '議論全体を振り返り、「なぜ自分たちが勝っているか」をアピール（新論点はNG）。'
+      },
+      {
+        id: 'GR', side: 'gov', label: 'Government Reply', sideJa: '肯定派', secKey: 'grSec',
+        roleJa: '肯定派：3人目（総括）',
+        taskJa: '議論全体を振り返り、「なぜ自分たちが勝っているか」をアピール（新論点はNG）。'
+      }
     ];
 
     function clampTtsRate(v) {
@@ -2798,6 +2890,14 @@
     /* ========= ディベートモード ========= */
     function getDebateFlowStep(idx) { return DEBATE_FLOW[idx] || null; }
 
+    function formatDebateStepDuration(step) {
+      if (!step) return '—';
+      const sec = debateRow ? (Number(debateRow[step.secKey]) || 120) : 120;
+      if (sec >= 60 && sec % 60 === 0) return `${sec / 60}分`;
+      if (sec >= 60) return `${Math.floor(sec / 60)}分${sec % 60}秒`;
+      return `${sec}秒`;
+    }
+
     function getDebateAiSide() {
       const sw = el('debateAiSideSwitch');
       return sw && sw.checked ? 'gov' : 'opp';
@@ -2855,28 +2955,83 @@
       if (!tbody) return;
       tbody.innerHTML = '';
       let order = 0;
-      DEBATE_FLOW.forEach(step => {
+      DEBATE_FLOW.forEach((step, flowIndex) => {
+        const tr = document.createElement('tr');
+        tr.dataset.flowIndex = String(flowIndex);
         if (step.type === 'prep') {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${++order}</td><td colspan="2">${step.label}</td><td colspan="2" class="small">タイマーのみ</td>`;
+          tr.innerHTML = `
+            <td>${++order}</td>
+            <td>${step.roleJa || step.label}</td>
+            <td>${step.enLabel || step.label}</td>
+            <td>${formatDebateStepDuration(step)}</td>
+            <td colspan="2" class="small" style="text-align:center;">—</td>
+            <td class="assign-task">${step.taskJa || ''}</td>`;
           tbody.appendChild(tr);
           return;
         }
         const a = debateAssignments.find(x => x.speechId === step.id) || { assigneeType: 'ai', speakerName: 'AI' };
-        const tr = document.createElement('tr');
         tr.dataset.speechId = step.id;
         tr.dataset.side = step.side;
         tr.innerHTML = `
           <td>${++order}</td>
-          <td>${step.id}: ${step.label}</td>
-          <td class="${step.side === 'gov' ? 'side-gov' : 'side-opp'}">${step.sideJa}</td>
+          <td class="${step.side === 'gov' ? 'side-gov' : 'side-opp'}">${step.roleJa || step.sideJa}</td>
+          <td>${step.id} (${step.label})</td>
+          <td>${formatDebateStepDuration(step)}</td>
           <td><select class="assign-type" ${debateSelectorsFrozen ? 'disabled' : ''}>
             <option value="human" ${a.assigneeType === 'human' ? 'selected' : ''}>人間</option>
             <option value="ai" ${a.assigneeType === 'ai' ? 'selected' : ''}>AI</option>
           </select></td>
-          <td><input type="text" class="assign-name" value="${(a.speakerName || '').replace(/"/g, '&quot;')}" placeholder="氏名" ${debateSelectorsFrozen ? 'disabled' : ''}></td>`;
+          <td><input type="text" class="assign-name" value="${(a.speakerName || '').replace(/"/g, '&quot;')}" placeholder="氏名" ${debateSelectorsFrozen ? 'disabled' : ''}></td>
+          <td class="assign-task">${step.taskJa || ''}</td>`;
         tbody.appendChild(tr);
       });
+      highlightAssignmentTableRow();
+    }
+
+    function highlightAssignmentTableRow() {
+      document.querySelectorAll('#assignTableBody tr').forEach(tr => {
+        const isCurrent = debatePhase !== 'setup' && debatePhase !== 'done' &&
+          tr.dataset.flowIndex === String(debateStepIndex);
+        tr.classList.toggle('assign-row-current', isCurrent);
+      });
+    }
+
+    function updateDebateCurrentTask() {
+      const panel = el('debateCurrentTask');
+      const roleEl = el('debateCurrentTaskRole');
+      const bodyEl = el('debateCurrentTaskBody');
+      if (!panel || !roleEl || !bodyEl) return;
+
+      const step = getDebateFlowStep(debateStepIndex);
+      const showPhase = step && ['running', 'prep'].includes(debatePhase);
+      if (!showPhase) {
+        panel.classList.add('hidden');
+        return;
+      }
+
+      panel.classList.remove('hidden', 'debate-task-human', 'debate-task-prep', 'debate-task-ai');
+      const assign = step.type === 'prep' ? null : getCurrentDebateAssignment();
+      const duration = formatDebateStepDuration(step);
+      let roleLine = '';
+
+      if (step.type === 'prep') {
+        panel.classList.add('debate-task-prep');
+        roleLine = `⏳ ${step.roleJa || step.label} · ${duration}`;
+      } else {
+        const who = assign?.assigneeType === 'human'
+          ? `あなた（${assign.speakerName || '人間'}）`
+          : (assign?.assigneeType === 'ai' ? 'AI' : '—');
+        roleLine = `${step.roleJa || step.sideJa} · ${step.id} (${step.label}) · ${duration} · ${who}`;
+        if (assign?.assigneeType === 'human' && debatePhase === 'running') {
+          panel.classList.add('debate-task-human');
+        } else if (assign?.assigneeType === 'ai' && debatePhase === 'running') {
+          panel.classList.add('debate-task-ai');
+          if (busy) roleLine += ' · AI発言中…';
+        }
+      }
+
+      roleEl.textContent = roleLine;
+      bodyEl.textContent = step.taskJa || '';
     }
 
     function fillMyNameToHumanSide() {
@@ -3107,14 +3262,14 @@
       }
       banner.classList.remove('active-gov', 'active-opp');
       if (step.type === 'prep') {
-        el('debateCurrentSpeech').textContent = step.label;
-        el('debateCurrentAssignee').textContent = '準備中（発話不可）';
+        el('debateCurrentSpeech').textContent = `⏳ ${step.roleJa || step.label}`;
+        el('debateCurrentAssignee').textContent = step.taskJa || '準備中（発話不可）';
         el('debateTimer').textContent = '—';
         return;
       }
       banner.classList.add(step.side === 'gov' ? 'active-gov' : 'active-opp');
       const assign = getCurrentDebateAssignment();
-      el('debateCurrentSpeech').textContent = `${step.id}: ${step.label}（${step.sideJa}）`;
+      el('debateCurrentSpeech').textContent = `${step.roleJa || step.sideJa} · ${step.id} (${step.label})`;
       if (assign) {
         const who = assign.assigneeType === 'human' ? `人間 · ${assign.speakerName || '—'}` : 'AI';
         el('debateCurrentAssignee').textContent = `担当: ${who}`;
@@ -3180,6 +3335,8 @@
       updateDebatePhaseButton();
       updateDebateProgressBanner();
       updateDebateAiSideSwitchUi();
+      updateDebateCurrentTask();
+      highlightAssignmentTableRow();
     }
 
     async function startDebateFlow() {
