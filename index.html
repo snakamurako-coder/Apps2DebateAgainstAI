@@ -1646,6 +1646,18 @@
     let currentUtterance = null; // ★ GC対策：グローバル変数で保持
     let ttsHeartbeatId = null;   // ★ ChromeのTTSフリーズ防止ハートビート
     let voiceLoadRetryCount = 0; // ★ 声リスト読み込みリトライ回数
+    let safariTtsUnlocked = false; // ★ Safari TTS unlock フラグ
+
+    /* ========= ブラウザ検出（1か所で判定、全体で参照） ========= */
+    const BROWSER = (() => {
+      const ua = navigator.userAgent;
+      const isSafari = /Safari\//.test(ua) && !/Chrome\//.test(ua);
+      const isEdge   = /Edg\//.test(ua);
+      const isChrome = /Chrome\//.test(ua) && !isEdge;
+      const isFirefox = /Firefox\//.test(ua);
+      const isIOS = /iPhone|iPad|iPod/.test(ua);
+      return { isSafari, isEdge, isChrome, isFirefox, isIOS };
+    })();
 
     // GAS REST 呼び出し設定（APP_CONFIG で上書き可能、未設定時は以下を使用）
     let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbzAzH0C1DJokryRASwlkHSG34r01j6dMfNBKV89tjGU1zgaVxPE7B_PeAvVPZqlHdP4qA/exec';
@@ -2554,26 +2566,36 @@
     function initRecognition() {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
-        // ★ 非対応ブラウザ（Firefox / Safari など）の場合、目立つ警告を表示
-        const isChrome = /Chrome/.test(navigator.userAgent) && !/Edg/.test(navigator.userAgent);
-        const msg = isChrome
-          ? 'STT (音声認識) はこのブラウザではサポートされていません。'
-          : '⚠ 音声認識には Google Chrome が必要です。Chrome で開き直してください。';
+        // ★ 非対応ブラウザ別メッセージ
+        let msg;
+        if (BROWSER.isSafari) {
+          msg = '🎤 音声認識（マイク入力）はSafariでは非対応です。テキスト入力をご使用ください。';
+        } else if (BROWSER.isFirefox) {
+          msg = '🎤 音声認識にはChrome / Edgeが必要です。';
+        } else {
+          msg = '🎤 音声認識はこのブラウザではサポートされていません。Chrome / Edge をお試しください。';
+        }
         statusRun(msg);
-        [el('btnRecToggle'), el('btnDebateRecToggle')].forEach(b => { if (b) { b.disabled = true; b.title = msg; } });
+        [el('btnRecToggle'), el('btnDebateRecToggle')].forEach(b => {
+          if (b) { b.disabled = true; b.title = msg; b.style.opacity = '0.4'; }
+        });
         return;
       }
       rec = new SR();
       rec.lang = 'en-US';
       rec.interimResults = true;
+      // ★ Edge は continuous=true で動作する。Safari はここに来ない（SR=null）
       rec.continuous = true;
       rec.onstart = () => { recognizing = true; setRecUIRecording(true); };
       rec.onend = () => { recognizing = false; setRecUIRecording(false); stopAudioViz(); };
       rec.onerror = e => {
         recognizing = false; setRecUIRecording(false); stopAudioViz();
         if (e.error === 'audio-capture' || e.error === 'not-allowed') {
-          // ★ マイク権限拒否の場合、操作手順を案内
-          statusRun('🔒 マイクへのアクセスが拒否されています。アドレスバー左端の 🔒 アイコン → 「マイク」→「許可」に変更してからページを再読み込みしてください。');
+          // ★ マイク権限拒否：ブラウザ別の案内
+          const where = BROWSER.isEdge
+            ? 'アドレスバー左端のアイコン → 「マイク」→「許可」'
+            : 'アドレスバー左端の 🔒 アイコン → 「マイク」→「許可」';
+          statusRun(`🔒 マイクへのアクセスが拒否されています。${where}に変更してからページを再読み込みしてください。`);
           [el('btnRecToggle'), el('btnDebateRecToggle')].forEach(b => { if (b) b.disabled = true; });
         } else if (e.error !== 'no-speech') {
           statusSubmit('音声認識エラー: ' + e.error, true);
@@ -2605,9 +2627,11 @@
 
     /* ========= TTS：速度コントロール維持 ========= */
 
-    /** ★ ChromeのTTSフリーズ防止ハートビート（10秒ごとにpause/resumeでエンジンを維持） */
+    /** ★ ChromeのTTSフリーズ防止ハートビート（Chrome専用・10秒ごとにpause/resumeでエンジンを維持） */
     function startTTSHeartbeat() {
-      if (ttsHeartbeatId) return; // すでに動いている場合はスキップ
+      // Safari / Edge ではこのハートビートは不要かつ有害なためスキップ
+      if (!BROWSER.isChrome) return;
+      if (ttsHeartbeatId) return;
       ttsHeartbeatId = setInterval(() => {
         if (!('speechSynthesis' in window)) return;
         // 発話中でないときだけ pulse する（発話中に pause すると読み上げが止まる）
@@ -2640,37 +2664,76 @@
 
     function populateVoicesUSGB() {
       const list = window.speechSynthesis.getVoices() || [];
-      voices = list.filter(v => /^en-(US|GB)/i.test(v.lang));
+      // ★ まず en-US/en-GB を優先。見つからなければ en-* 全体にフォールバック（Safari対応）
+      let matched = list.filter(v => /^en-(US|GB)/i.test(v.lang));
+      if (matched.length === 0) matched = list.filter(v => /^en/i.test(v.lang));
+      voices = matched;
       voiceReady = voices.length > 0;
       voiceSelect.innerHTML = '';
       if (!voiceReady) {
         const o = document.createElement('option');
         o.textContent = '（TTS読込中…）';
         voiceSelect.appendChild(o);
-        // ★ リトライ：最大5回・1秒おきに再試行
-        if (voiceLoadRetryCount < 5) {
+        // ★ Safari は声リスト取得が遅いため最大15回まで再試行（他は5回）
+        const maxRetry = BROWSER.isSafari ? 15 : 5;
+        if (voiceLoadRetryCount < maxRetry) {
           voiceLoadRetryCount++;
           setTimeout(populateVoicesUSGB, 1000);
         } else {
-          o.textContent = '（TTS非対応）';
+          o.textContent = '（英語TTS音声が見つかりません）';
         }
         return;
       }
-      voiceLoadRetryCount = 0; // 成功したらリセット
+      voiceLoadRetryCount = 0;
       voices.forEach(v => {
         const o = document.createElement('option');
         o.value = v.name;
-        o.textContent = `${v.name} (${v.lang})`;
+        // en-US/GB 以外（Safariのen-AU等）には ★ を付けて区別
+        const flag = /^en-(US|GB)/i.test(v.lang) ? '' : ' ★';
+        o.textContent = `${v.name} (${v.lang})${flag}`;
         voiceSelect.appendChild(o);
       });
-      voiceSelect.selectedIndex = 0;
+      // en-US を優先選択
+      const prefIdx = voices.findIndex(v => /^en-US/i.test(v.lang));
+      voiceSelect.selectedIndex = prefIdx >= 0 ? prefIdx : 0;
+    }
+
+    /**
+     * ★ ブラウザ別フリーズ対策を適用して utterance を発話するヘルパー。
+     *   Chrome: cancel→resume→speak、onstart タイムアウトリトライ
+     *   Edge / Safari: そのまま speak（ハック不要）
+     */
+    function _speakUtterance(u, onRetry) {
+      if (BROWSER.isChrome) {
+        // Chrome フリーズ対策: cancel() → resume() → speak()
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
+        window.speechSynthesis.speak(u);
+        // onstart タイムアウト検知・自動リトライ
+        let started = false;
+        const prevOnStart = u.onstart;
+        u.onstart = (ev) => { started = true; if (prevOnStart) prevOnStart(ev); };
+        setTimeout(() => {
+          if (!started && currentUtterance === u) {
+            console.warn('[TTS] onstart timeout – retrying speak (Chrome)');
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.resume();
+            window.speechSynthesis.speak(u);
+            if (typeof onRetry === 'function') onRetry();
+          }
+        }, 1500);
+      } else {
+        // Edge / Safari: シンプルに speak
+        window.speechSynthesis.speak(u);
+      }
     }
 
     async function speak(text) {
       if (!('speechSynthesis' in window) || !text) return;
-      // ★ voiceReady でない場合は最大2秒待機
+      // ★ voiceReady でない場合は最大2秒待機（Safariは更に長く）
       if (!voiceReady) {
-        const ok = await ensureVoiceReady(2000);
+        const waitMs = BROWSER.isSafari ? 3000 : 2000;
+        const ok = await ensureVoiceReady(waitMs);
         if (!ok) return;
       }
       await beginTTS(true);
@@ -2678,27 +2741,14 @@
       const vname = voiceSelect.value;
       const v = voices.find(x => x.name === vname) || voices[0];
       const u = new SpeechSynthesisUtterance(text);
-      u.voice = v; u.lang = v.lang;
+      u.voice = v; u.lang = v ? v.lang : 'en-US';
       u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
       currentUtterance = u; // ★ GC対策
       speakingNow = true; updateUI(); updateDebateUI();
       const cleanup = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); };
       u.onend = cleanup; u.onerror = cleanup;
-      // ★ フリーズ対策: cancel() → resume() → speak() の順で確実に発話
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(u);
-      // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
-      let started = false;
-      u.onstart = () => { started = true; };
-      setTimeout(() => {
-        if (!started && currentUtterance === u) {
-          console.warn('[TTS] onstart timeout – retrying speak');
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.resume();
-          window.speechSynthesis.speak(u);
-        }
-      }, 1500);
+      // ★ ブラウザ別フリーズ対策ヘルパーを使用
+      _speakUtterance(u);
     }
 
     async function speakGuarded(text, after) { await addAssistantBubbleWithAutoTTS(text); if (typeof after === 'function') after(); }
@@ -3575,9 +3625,10 @@
         revealDebateBubbleText(bubbleDiv);
         return;
       }
-      // ★ voiceReady でない場合は最大2秒待機してから発話
+      // ★ voiceReady でない場合は最大待機（Safariは長め）
       if (!voiceReady) {
-        const ok = await ensureVoiceReady(2000);
+        const waitMs = BROWSER.isSafari ? 3000 : 2000;
+        const ok = await ensureVoiceReady(waitMs);
         if (!ok) { revealDebateBubbleText(bubbleDiv); return; }
       }
       await beginTTS(true);
@@ -3587,7 +3638,7 @@
         const v = voices.find(x => x.name === vname) || voices[0];
         const u = new SpeechSynthesisUtterance(text);
         u.voice = v;
-        u.lang = v.lang;
+        u.lang = v ? v.lang : 'en-US';
         u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
         currentUtterance = u;
         speakingNow = true;
@@ -3604,21 +3655,8 @@
         };
         u.onend = done;
         u.onerror = done;
-        // ★ フリーズ対策: resume() してから speak()
-        window.speechSynthesis.cancel();
-        window.speechSynthesis.resume();
-        window.speechSynthesis.speak(u);
-        // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
-        let started = false;
-        u.onstart = () => { started = true; };
-        setTimeout(() => {
-          if (!started && currentUtterance === u) {
-            console.warn('[TTS] speakGuardedDebate: onstart timeout – retrying');
-            window.speechSynthesis.cancel();
-            window.speechSynthesis.resume();
-            window.speechSynthesis.speak(u);
-          }
-        }, 1500);
+        // ★ ブラウザ別フリーズ対策ヘルパーを使用
+        _speakUtterance(u);
       });
     }
 
@@ -3791,43 +3829,83 @@
     /* ========= TTS初期化 ========= */
     function initTTS() {
       if (!('speechSynthesis' in window)) {
-        statusRun('TTS (音声読み上げ) はサポートされていません。');
+        statusRun('TTS (音声読み上げ) はこのブラウザではサポートされていません。');
         voiceSelect.disabled = true;
         return;
       }
       function load() { populateVoicesUSGB(); }
-      // ★ onvoiceschanged が使えるブラウザ（Chrome等）では登録
+      // ★ onvoiceschanged が使えるブラウザ（Chrome / Edge）では登録
       if (speechSynthesis.onvoiceschanged !== undefined) {
         speechSynthesis.onvoiceschanged = load;
       }
       load(); // 初回即時実行（既にロード済みの場合に対応）
-      // ★ ハートビート開始（ChromeのTTSフリーズ防止）
+
+      // ★ Safari は onvoiceschanged が発火しないため、ポーリングで補完
+      if (BROWSER.isSafari) {
+        let pollCount = 0;
+        const poll = setInterval(() => {
+          pollCount++;
+          if (voiceReady || pollCount >= 20) { clearInterval(poll); return; }
+          load();
+        }, 500);
+      }
+
+      // ★ Safari TTS unlock：ユーザー操作（click / touchstart）を受けてから
+      //   空の Utterance を発行し、ブラウザの自動再生制限を解除する。
+      //   一度解除したらリスナーを削除。
+      if (BROWSER.isSafari && !safariTtsUnlocked) {
+        const unlock = () => {
+          if (safariTtsUnlocked) return;
+          safariTtsUnlocked = true;
+          try {
+            const silent = new SpeechSynthesisUtterance('');
+            silent.volume = 0;
+            window.speechSynthesis.speak(silent);
+          } catch (_) {}
+          document.removeEventListener('click', unlock);
+          document.removeEventListener('touchstart', unlock);
+        };
+        document.addEventListener('click', unlock, { once: true });
+        document.addEventListener('touchstart', unlock, { once: true });
+      }
+
+      // ★ ハートビート開始（Chrome専用・startTTSHeartbeat内で判定）
       startTTSHeartbeat();
     }
 
-    /** ★ ブラウザ互換性チェック（Chrome以外では警告バナーを表示） */
+    /** ★ ブラウザ互換性チェック（ブラウザ別バナーを表示） */
     function checkBrowserCompatibility() {
-      const ua = navigator.userAgent;
-      const isChrome = /Chrome\//.test(ua) && !/Edg\/|OPR\//.test(ua);
-      if (isChrome) return; // Chrome OK
-      // Chrome 以外の場合は目立つ警告を画面上部に表示
+      // Chrome: 全機能OK → バナーなし
+      if (BROWSER.isChrome) return;
+
+      let bgColor, message;
+
+      if (BROWSER.isEdge) {
+        // Edge: TTS/STT ともに対応。声の種類が少ない場合がある程度
+        bgColor = '#0078d4'; // Edge blue
+        message = 'ℹ️ Microsoft Edge で動作しています。TTS・音声認識ともに対応しています。音声の種類はChromeより少ない場合があります。';
+      } else if (BROWSER.isSafari) {
+        // Safari: TTS対応、STT非対応
+        bgColor = '#b45309'; // amber
+        message = '⚠️ Safariで動作しています。<strong>音声読み上げ（TTS）は使用可能</strong>ですが、<strong>マイク音声認識（STT）は非対応</strong>です。テキスト入力をご利用ください。';
+      } else {
+        // Firefox 等: 両方非対応
+        bgColor = '#dc3545'; // red
+        message = '⚠️ このブラウザでは音声機能（読み上げ・音声認識）が正常に動作しない場合があります。<a href="https://www.google.com/chrome/" target="_blank" style="color:#fff;text-decoration:underline;">Chrome</a> または <a href="https://www.microsoft.com/edge" target="_blank" style="color:#fff;text-decoration:underline;">Edge</a> をお試しください。';
+      }
+
       const banner = document.createElement('div');
       banner.id = 'browserWarningBanner';
       banner.style.cssText = [
         'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
-        'background:#dc3545', 'color:#fff', 'text-align:center',
+        `background:${bgColor}`, 'color:#fff', 'text-align:center',
         'padding:10px 16px', 'font-size:14px', 'font-weight:600',
-        'box-shadow:0 2px 8px rgba(0,0,0,0.3)', 'line-height:1.4'
+        'box-shadow:0 2px 8px rgba(0,0,0,0.3)', 'line-height:1.5'
       ].join(';');
-      banner.innerHTML = [
-        '⚠ このアプリの音声機能（読み上げ・音声認識）は <strong>Google Chrome</strong> 専用です。',
-        '現在のブラウザでは正常に動作しない場合があります。',
-        '　<a href="https://www.google.com/chrome/" target="_blank" ',
-        'style="color:#fff;text-decoration:underline;">Chrome をダウンロード</a>',
-        '　<button onclick="this.parentElement.remove()" ',
-        'style="margin-left:16px;background:rgba(255,255,255,0.25);border:none;color:#fff;',
-        'cursor:pointer;padding:2px 10px;border-radius:4px;">✕ 閉じる</button>'
-      ].join('');
+      banner.innerHTML = message +
+        ' <button onclick="this.parentElement.remove()" ' +
+        'style="margin-left:16px;background:rgba(255,255,255,0.25);border:none;color:#fff;' +
+        'cursor:pointer;padding:2px 10px;border-radius:4px;">✕ 閉じる</button>';
       document.body.prepend(banner);
     }
 
