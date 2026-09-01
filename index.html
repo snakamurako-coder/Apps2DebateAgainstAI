@@ -1644,6 +1644,8 @@
     const TTS_TAIL_BUFFER_MS = 700;
     let ttsEndTime = 0; // TTS終了時刻（エコー防止用）
     let currentUtterance = null; // ★ GC対策：グローバル変数で保持
+    let ttsHeartbeatId = null;   // ★ ChromeのTTSフリーズ防止ハートビート
+    let voiceLoadRetryCount = 0; // ★ 声リスト読み込みリトライ回数
 
     // GAS REST 呼び出し設定（APP_CONFIG で上書き可能、未設定時は以下を使用）
     let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbzL9W6Hny-zjfGZ4JBSZfBhYkxlwXAcyzvvk0KPVeoInu_ZWxp6XCyDC217akF3wR72dg/exec';
@@ -2488,7 +2490,12 @@
     }
     async function addAssistantBubbleWithAutoTTS(text) {
       const b = buildAssistantBubble(text);
-      if (!('speechSynthesis' in window) || !voiceReady || !text) { return; }
+      if (!('speechSynthesis' in window) || !text) { return; }
+      // ★ voiceReady でない場合は最大2秒待機してから発話
+      if (!voiceReady) {
+        const ok = await ensureVoiceReady(2000);
+        if (!ok) { return; }
+      }
       await beginTTS(true); scrollToBottomIfEnabled();
       b.play.classList.add('is-speaking'); b.play.setAttribute('aria-pressed', 'true'); b.play.disabled = true; b.toggle.disabled = true;
       const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0];
@@ -2508,7 +2515,21 @@
         endTTS();
       };
       u.onend = cleanup; u.onerror = cleanup;
-      window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
+      // ★ フリーズ対策: resume() してから speak()
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(u);
+      // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
+      let started = false;
+      u.onstart = () => { started = true; };
+      setTimeout(() => {
+        if (!started && currentUtterance === u) {
+          console.warn('[TTS] addAssistantBubble: onstart timeout – retrying');
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+          window.speechSynthesis.speak(u);
+        }
+      }, 1500);
     }
     function addAssistantBubble(text) { buildAssistantBubble(text); }
     function revealAllAssistantTexts() { document.querySelectorAll('.msg.assistant').forEach(div => div.classList.remove('hide-text')); }
@@ -2531,13 +2552,39 @@
     }
     function stopAudioViz() { cancelAnimationFrame(rafId); rafId = null; if (analyser && audioCtx) { try { if (audioCtx.state !== 'closed') audioCtx.suspend(); } catch (_) { } } if (micStream) { try { micStream.getTracks().forEach(t => t.stop()); } catch (_) { } } micStream = null; vizBars.forEach(b => b.style.height = '6px'); }
     function initRecognition() {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (!SR) { statusRun('STT (音声認識) はサポートされていません。'); recToggleBtn.disabled = true; return; } rec = new SR(); rec.lang = 'en-US'; rec.interimResults = true; rec.continuous = true; rec.onstart = () => { recognizing = true; setRecUIRecording(true); }; rec.onend = () => { recognizing = false; setRecUIRecording(false); stopAudioViz(); }; rec.onerror = e => { if (e.error !== 'no-speech' && e.error !== 'audio-capture') { statusSubmit('音声認識エラー: ' + e.error, true); } recognizing = false; setRecUIRecording(false); stopAudioViz(); };
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) {
+        // ★ 非対応ブラウザ（Firefox / Safari など）の場合、目立つ警告を表示
+        const isChrome = /Chrome/.test(navigator.userAgent) && !/Edg/.test(navigator.userAgent);
+        const msg = isChrome
+          ? 'STT (音声認識) はこのブラウザではサポートされていません。'
+          : '⚠ 音声認識には Google Chrome が必要です。Chrome で開き直してください。';
+        statusRun(msg);
+        [el('btnRecToggle'), el('btnDebateRecToggle')].forEach(b => { if (b) { b.disabled = true; b.title = msg; } });
+        return;
+      }
+      rec = new SR();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.continuous = true;
+      rec.onstart = () => { recognizing = true; setRecUIRecording(true); };
+      rec.onend = () => { recognizing = false; setRecUIRecording(false); stopAudioViz(); };
+      rec.onerror = e => {
+        recognizing = false; setRecUIRecording(false); stopAudioViz();
+        if (e.error === 'audio-capture' || e.error === 'not-allowed') {
+          // ★ マイク権限拒否の場合、操作手順を案内
+          statusRun('🔒 マイクへのアクセスが拒否されています。アドレスバー左端の 🔒 アイコン → 「マイク」→「許可」に変更してからページを再読み込みしてください。');
+          [el('btnRecToggle'), el('btnDebateRecToggle')].forEach(b => { if (b) b.disabled = true; });
+        } else if (e.error !== 'no-speech') {
+          statusSubmit('音声認識エラー: ' + e.error, true);
+        }
+      };
       rec.onresult = e => {
         const inp = getActiveTextInput();
         if (!inp || inp.disabled) return;
         if (Date.now() - ttsEndTime < 500) return;
         let finalText = ''; for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += r[0].transcript; } if (finalText) { const norm = normalizeFinalUtterance(finalText); if (inp.value && !/\s$/.test(inp.value)) inp.value += ' '; inp.value += norm; updateUI(); updateDebateUI(); }
-      }
+      };
     }
     function toggleRecognition() { recognizing ? stopRecognition() : startRecognition(); }
     async function startRecognition() { if (rec && !recognizing && !busy) { try { await startAudioViz(); rec.start(); } catch (_) { } } }
@@ -2557,8 +2604,103 @@
     }
 
     /* ========= TTS：速度コントロール維持 ========= */
-    function populateVoicesUSGB() { const list = window.speechSynthesis.getVoices() || []; voices = list.filter(v => /^en-(US|GB)/i.test(v.lang)); voiceReady = voices.length > 0; voiceSelect.innerHTML = ''; if (!voiceReady) { const o = document.createElement('option'); o.textContent = '（TTS非対応）'; voiceSelect.appendChild(o); return; } voices.forEach(v => { const o = document.createElement('option'); o.value = v.name; o.textContent = `${v.name} (${v.lang})`; voiceSelect.appendChild(o); }); voiceSelect.selectedIndex = 0; }
-    async function speak(text) { if (!('speechSynthesis' in window) || !voiceReady || !text) return; await beginTTS(true); scrollToBottomIfEnabled(); const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0]; const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0; currentUtterance = u; /* GC対策 */ speakingNow = true; updateUI(); updateDebateUI(); u.onend = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); }; u.onerror = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); }; window.speechSynthesis.cancel(); window.speechSynthesis.speak(u); }
+
+    /** ★ ChromeのTTSフリーズ防止ハートビート（10秒ごとにpause/resumeでエンジンを維持） */
+    function startTTSHeartbeat() {
+      if (ttsHeartbeatId) return; // すでに動いている場合はスキップ
+      ttsHeartbeatId = setInterval(() => {
+        if (!('speechSynthesis' in window)) return;
+        // 発話中でないときだけ pulse する（発話中に pause すると読み上げが止まる）
+        if (!window.speechSynthesis.speaking) {
+          try {
+            window.speechSynthesis.pause();
+            window.speechSynthesis.resume();
+          } catch (_) {}
+        }
+      }, 10000);
+    }
+
+    /** ★ voiceReady になるまで最大 waitMs ミリ秒待機するユーティリティ */
+    function ensureVoiceReady(waitMs = 2000) {
+      return new Promise(resolve => {
+        if (voiceReady) { resolve(true); return; }
+        // 声リストの再取得を試みる
+        populateVoicesUSGB();
+        if (voiceReady) { resolve(true); return; }
+        const start = Date.now();
+        const check = setInterval(() => {
+          populateVoicesUSGB();
+          if (voiceReady || Date.now() - start >= waitMs) {
+            clearInterval(check);
+            resolve(voiceReady);
+          }
+        }, 250);
+      });
+    }
+
+    function populateVoicesUSGB() {
+      const list = window.speechSynthesis.getVoices() || [];
+      voices = list.filter(v => /^en-(US|GB)/i.test(v.lang));
+      voiceReady = voices.length > 0;
+      voiceSelect.innerHTML = '';
+      if (!voiceReady) {
+        const o = document.createElement('option');
+        o.textContent = '（TTS読込中…）';
+        voiceSelect.appendChild(o);
+        // ★ リトライ：最大5回・1秒おきに再試行
+        if (voiceLoadRetryCount < 5) {
+          voiceLoadRetryCount++;
+          setTimeout(populateVoicesUSGB, 1000);
+        } else {
+          o.textContent = '（TTS非対応）';
+        }
+        return;
+      }
+      voiceLoadRetryCount = 0; // 成功したらリセット
+      voices.forEach(v => {
+        const o = document.createElement('option');
+        o.value = v.name;
+        o.textContent = `${v.name} (${v.lang})`;
+        voiceSelect.appendChild(o);
+      });
+      voiceSelect.selectedIndex = 0;
+    }
+
+    async function speak(text) {
+      if (!('speechSynthesis' in window) || !text) return;
+      // ★ voiceReady でない場合は最大2秒待機
+      if (!voiceReady) {
+        const ok = await ensureVoiceReady(2000);
+        if (!ok) return;
+      }
+      await beginTTS(true);
+      scrollToBottomIfEnabled();
+      const vname = voiceSelect.value;
+      const v = voices.find(x => x.name === vname) || voices[0];
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = v; u.lang = v.lang;
+      u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
+      currentUtterance = u; // ★ GC対策
+      speakingNow = true; updateUI(); updateDebateUI();
+      const cleanup = () => { currentUtterance = null; speakingNow = false; updateUI(); updateDebateUI(); endTTS(); };
+      u.onend = cleanup; u.onerror = cleanup;
+      // ★ フリーズ対策: cancel() → resume() → speak() の順で確実に発話
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+      window.speechSynthesis.speak(u);
+      // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
+      let started = false;
+      u.onstart = () => { started = true; };
+      setTimeout(() => {
+        if (!started && currentUtterance === u) {
+          console.warn('[TTS] onstart timeout – retrying speak');
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.resume();
+          window.speechSynthesis.speak(u);
+        }
+      }, 1500);
+    }
+
     async function speakGuarded(text, after) { await addAssistantBubbleWithAutoTTS(text); if (typeof after === 'function') after(); }
 
     /* ========= TTSとSTTの連携 ========= */
@@ -3429,9 +3571,14 @@
     }
 
     async function speakGuardedDebate(text, bubbleDiv) {
-      if (!('speechSynthesis' in window) || !voiceReady || !text) {
+      if (!('speechSynthesis' in window) || !text) {
         revealDebateBubbleText(bubbleDiv);
         return;
+      }
+      // ★ voiceReady でない場合は最大2秒待機してから発話
+      if (!voiceReady) {
+        const ok = await ensureVoiceReady(2000);
+        if (!ok) { revealDebateBubbleText(bubbleDiv); return; }
       }
       await beginTTS(true);
       scrollToBottomIfEnabled();
@@ -3457,8 +3604,21 @@
         };
         u.onend = done;
         u.onerror = done;
+        // ★ フリーズ対策: resume() してから speak()
         window.speechSynthesis.cancel();
+        window.speechSynthesis.resume();
         window.speechSynthesis.speak(u);
+        // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
+        let started = false;
+        u.onstart = () => { started = true; };
+        setTimeout(() => {
+          if (!started && currentUtterance === u) {
+            console.warn('[TTS] speakGuardedDebate: onstart timeout – retrying');
+            window.speechSynthesis.cancel();
+            window.speechSynthesis.resume();
+            window.speechSynthesis.speak(u);
+          }
+        }, 1500);
       });
     }
 
@@ -3629,7 +3789,47 @@
     const footer = document.getElementById('afterSubmitLink');
     if (footer) footer.classList.add('hidden');
     /* ========= TTS初期化 ========= */
-    function initTTS() { function load() { populateVoicesUSGB(); } if ('speechSynthesis' in window) { if (speechSynthesis.onvoiceschanged !== undefined) speechSynthesis.onvoiceschanged = load; load(); } else { statusRun('TTS (音声読み上げ) はサポートされていません。'); voiceSelect.disabled = true; } }
+    function initTTS() {
+      if (!('speechSynthesis' in window)) {
+        statusRun('TTS (音声読み上げ) はサポートされていません。');
+        voiceSelect.disabled = true;
+        return;
+      }
+      function load() { populateVoicesUSGB(); }
+      // ★ onvoiceschanged が使えるブラウザ（Chrome等）では登録
+      if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = load;
+      }
+      load(); // 初回即時実行（既にロード済みの場合に対応）
+      // ★ ハートビート開始（ChromeのTTSフリーズ防止）
+      startTTSHeartbeat();
+    }
+
+    /** ★ ブラウザ互換性チェック（Chrome以外では警告バナーを表示） */
+    function checkBrowserCompatibility() {
+      const ua = navigator.userAgent;
+      const isChrome = /Chrome\//.test(ua) && !/Edg\/|OPR\//.test(ua);
+      if (isChrome) return; // Chrome OK
+      // Chrome 以外の場合は目立つ警告を画面上部に表示
+      const banner = document.createElement('div');
+      banner.id = 'browserWarningBanner';
+      banner.style.cssText = [
+        'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:9999',
+        'background:#dc3545', 'color:#fff', 'text-align:center',
+        'padding:10px 16px', 'font-size:14px', 'font-weight:600',
+        'box-shadow:0 2px 8px rgba(0,0,0,0.3)', 'line-height:1.4'
+      ].join(';');
+      banner.innerHTML = [
+        '⚠ このアプリの音声機能（読み上げ・音声認識）は <strong>Google Chrome</strong> 専用です。',
+        '現在のブラウザでは正常に動作しない場合があります。',
+        '　<a href="https://www.google.com/chrome/" target="_blank" ',
+        'style="color:#fff;text-decoration:underline;">Chrome をダウンロード</a>',
+        '　<button onclick="this.parentElement.remove()" ',
+        'style="margin-left:16px;background:rgba(255,255,255,0.25);border:none;color:#fff;',
+        'cursor:pointer;padding:2px 10px;border-radius:4px;">✕ 閉じる</button>'
+      ].join('');
+      document.body.prepend(banner);
+    }
 
     /* ========= 初期化 ========= */
     async function initApp() {
@@ -3685,6 +3885,7 @@
       if (btnLogoutToolbar) btnLogoutToolbar.addEventListener('click', logout);
       const btnRecheckLock = el('btnRecheckLock');
       if (btnRecheckLock) btnRecheckLock.addEventListener('click', onRecheckLock);
+      checkBrowserCompatibility(); // ★ ブラウザ互換性チェック
       initTTS(); initRecognition();
 
       if (isClientLocked()) {
