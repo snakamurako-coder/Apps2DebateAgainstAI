@@ -2502,19 +2502,38 @@
     }
     async function addAssistantBubbleWithAutoTTS(text) {
       const b = buildAssistantBubble(text);
-      if (!('speechSynthesis' in window) || !text) { return; }
-      // ★ voiceReady でない場合は最大2秒待機してから発話
+
+      // ★ TTS非対応 or テキスト空の場合は即座に表示して終了
+      if (!('speechSynthesis' in window) || !text) {
+        b.div.classList.remove('hide-text');
+        b.toggle.textContent = '非表示';
+        return;
+      }
+
+      // ★ voiceReady でない場合は最大2秒待機
       if (!voiceReady) {
         const ok = await ensureVoiceReady(2000);
-        if (!ok) { return; }
+        // 路がなければ即座に表示して終了
+        if (!ok) {
+          b.div.classList.remove('hide-text');
+          b.toggle.textContent = '非表示';
+          return;
+        }
       }
+
       await beginTTS(true); scrollToBottomIfEnabled();
       b.play.classList.add('is-speaking'); b.play.setAttribute('aria-pressed', 'true'); b.play.disabled = true; b.toggle.disabled = true;
       const vname = voiceSelect.value; const v = voices.find(x => x.name === vname) || voices[0];
-      const u = new SpeechSynthesisUtterance(text); u.voice = v; u.lang = v.lang; u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
+      const u = new SpeechSynthesisUtterance(text);
+      u.voice = v; u.lang = v ? v.lang : 'en-US';
+      u.rate = parseFloat(getActiveTtsRateSelect().value) || 1.0;
       currentUtterance = u; // ★ GC対策
       speakingNow = true; updateUI();
+
+      let cleanedUp = false;
       const cleanup = () => {
+        if (cleanedUp) return;
+        cleanedUp = true;
         currentUtterance = null;
         b.div.classList.remove('hide-text');
         b.toggle.textContent = '非表示';
@@ -2527,21 +2546,19 @@
         endTTS();
       };
       u.onend = cleanup; u.onerror = cleanup;
-      // ★ フリーズ対策: resume() してから speak()
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-      window.speechSynthesis.speak(u);
-      // ★ フリーズ検知: onstart が1.5秒以内に来なければ自動リトライ
-      let started = false;
-      u.onstart = () => { started = true; };
+
+      // ★ 安全網タイムアウト：onend/onerrorが一定時間内に発火しなければ強制解除
+      // 推定再生時間 = 文字数 × 0.07秒（英語リード時の目安）に rate で割った値 + 5秒の余裕
+      const estMs = Math.max(5000, (text.length * 70 / u.rate)) + 5000;
       setTimeout(() => {
-        if (!started && currentUtterance === u) {
-          console.warn('[TTS] addAssistantBubble: onstart timeout – retrying');
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.resume();
-          window.speechSynthesis.speak(u);
+        if (!cleanedUp) {
+          console.warn('[TTS] addAssistantBubble: safety timeout – forcing reveal');
+          cleanup();
         }
-      }, 1500);
+      }, estMs);
+
+      // ★ ブラウザ別フリーズ対策ヘルパーを使用
+      _speakUtterance(u);
     }
     function addAssistantBubble(text) { buildAssistantBubble(text); }
     function revealAllAssistantTexts() { document.querySelectorAll('.msg.assistant').forEach(div => div.classList.remove('hide-text')); }
@@ -3644,7 +3661,11 @@
         speakingNow = true;
         updateUI();
         updateDebateUI();
+
+        let cleanedUp = false;
         const done = () => {
+          if (cleanedUp) return;
+          cleanedUp = true;
           currentUtterance = null;
           speakingNow = false;
           revealDebateBubbleText(bubbleDiv);
@@ -3655,6 +3676,16 @@
         };
         u.onend = done;
         u.onerror = done;
+
+        // ★ 安全網タイムアウト：onend/onerrorが一定時間内に発火しなければ強制reveal+resolve
+        const estMs = Math.max(5000, (text.length * 70 / u.rate)) + 5000;
+        setTimeout(() => {
+          if (!cleanedUp) {
+            console.warn('[TTS] speakGuardedDebate: safety timeout – forcing reveal');
+            done();
+          }
+        }, estMs);
+
         // ★ ブラウザ別フリーズ対策ヘルパーを使用
         _speakUtterance(u);
       });
