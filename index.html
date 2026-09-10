@@ -1288,9 +1288,20 @@
           <div class="small" style="margin-top:.35rem;">※ AIスピーチの英語難易度（システムプロンプトに反映）</div>
         </div>
         <div>
-          <label for="debateSetSelect">ディベートセット</label>
-          <select id="debateSetSelect"></select>
+          <label for="debateAiDifficulty">AI対戦相手の難易度 (1 易 → 5 難)</label>
+          <select id="debateAiDifficulty">
+            <option value="1">1（易しい）</option>
+            <option value="2">2</option>
+            <option value="3" selected>3（標準）</option>
+            <option value="4">4</option>
+            <option value="5">5（難しい）</option>
+          </select>
+          <div class="small" style="margin-top:.35rem;">※ 反論の強さ・論理の厳密度（システムプロンプトに反映）</div>
         </div>
+      </div>
+      <div>
+        <label for="debateSetSelect">ディベートセット</label>
+        <select id="debateSetSelect"></select>
       </div>
       <div>
         <label for="debateMotionDisplay">議題（Motion）</label>
@@ -3072,15 +3083,41 @@
       return (deb && deb.value) ? deb.value : (cefr && cefr.value ? cefr.value : 'A2');
     }
 
-    function slimDebateRowForApi(row) {
+    function normalizeDebateAiDifficulty(value) {
+      const n = parseInt(String(value == null ? '' : value), 10);
+      if (isNaN(n)) return 3;
+      return Math.max(1, Math.min(5, n));
+    }
+
+    function getDebateAiDifficulty() {
+      const sel = el('debateAiDifficulty');
+      return normalizeDebateAiDifficulty(sel ? sel.value : 3);
+    }
+
+    function applyDebateAiDifficultyFromRow(row) {
+      const sel = el('debateAiDifficulty');
+      if (!sel || !row) return;
+      sel.value = String(normalizeDebateAiDifficulty(row.aiRebuttalStrength || row.aiLogicTightness || 3));
+    }
+
+    function slimDebateRowForApi(row, speechId, aiDifficulty) {
       if (!row) return {};
-      return {
-        serial: row.serial, title: row.title, motion: row.motion, sys: row.sys,
-        pmSec: row.pmSec, loSec: row.loSec, mgSec: row.mgSec, moSec: row.moSec,
-        orSec: row.orSec, grSec: row.grSec, prep1Sec: row.prep1Sec, prep2Sec: row.prep2Sec,
-        aiRebuttalStrength: row.aiRebuttalStrength, aiLogicTightness: row.aiLogicTightness,
-        aiTtsRate: row.aiTtsRate, judgePrompt: row.judgePrompt, speechPrompts: row.speechPrompts
+      const level = String(normalizeDebateAiDifficulty(aiDifficulty != null ? aiDifficulty : row.aiRebuttalStrength));
+      const out = {
+        motion: row.motion,
+        sys: row.sys,
+        aiRebuttalStrength: level,
+        aiLogicTightness: level
       };
+      if (speechId) {
+        const step = DEBATE_FLOW.find(s => s.id === speechId);
+        if (step && step.secKey) out[step.secKey] = row[step.secKey];
+        const prompt = row.speechPrompts && row.speechPrompts[speechId];
+        if (prompt) out.speechPrompt = prompt;
+      } else if (row.judgePrompt) {
+        out.judgePrompt = row.judgePrompt;
+      }
+      return out;
     }
 
     function slimDebateMessagesForApi(messages) {
@@ -3384,6 +3421,7 @@
       el('debateDisplayText').value = debateRow.displayText || '';
       const rate = clampTtsRate(debateRow.aiTtsRate);
       el('debateAiRate').value = String(rate);
+      applyDebateAiDifficultyFromRow(debateRow);
       if (!debateAssignments.length) debateAssignments = getDefaultDebateAssignments();
       renderAssignmentTable();
       updateDebateUI();
@@ -3530,6 +3568,8 @@
       el('debateSetSelect').disabled = busy || debateSelectorsFrozen || running || authLocked;
       const debateCefrEl = el('debateCefr');
       if (debateCefrEl) debateCefrEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
+      const debateAiDiffEl = el('debateAiDifficulty');
+      if (debateAiDiffEl) debateAiDiffEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
       const aiSideSw = el('debateAiSideSwitch');
       if (aiSideSw) aiSideSw.disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('btnFillMyName').disabled = busy || debateSelectorsFrozen || running || authLocked;
@@ -3558,7 +3598,7 @@
       debateStepIndex = 0;
       debateSelectorsFrozen = true;
       renderAssignmentTable();
-      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI難易度: ${getDebateAiDifficulty()}/5\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
       debatePhase = 'running';
       updateDebateUI();
       await advanceDebateStep();
@@ -3606,10 +3646,11 @@
         setBusy(true, 'AIスピーチ生成中…');
         try {
           const text = await callGAS('generate_debate_speech', {
-            row: slimDebateRowForApi(debateRow),
+            row: slimDebateRowForApi(debateRow, step.id, getDebateAiDifficulty()),
             speechId: step.id,
             side: step.side,
             cefr: getDebateCefr(),
+            aiDifficulty: getDebateAiDifficulty(),
             messages: slimDebateMessagesForApi(debateMessages)
           });
           const meta = {
@@ -3758,6 +3799,7 @@
           unitName: debateUnit,
           row: slimDebateRowForApi(debateRow),
           cefr: getDebateCefr(),
+          aiDifficulty: getDebateAiDifficulty(),
           messages: slimDebateMessagesForApi(debateMessages),
           assignments: debateAssignments,
           winnerSide: debateVerdict.winnerSide,

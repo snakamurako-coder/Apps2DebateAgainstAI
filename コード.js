@@ -1700,9 +1700,14 @@ function getDebateFlowStep_(speechId) {
   return DEBATE_FLOW.find(s => s.id === speechId) || null;
 }
 
+function normalizeAiDifficulty_(value) {
+  const n = parseInt(String(value == null ? '' : value), 10);
+  if (isNaN(n)) return 3;
+  return Math.max(1, Math.min(5, n));
+}
+
 function aiStrengthToText_(value, kind) {
-  const n = parseInt(String(value || '3'), 10);
-  const level = isNaN(n) ? 3 : Math.max(1, Math.min(5, n));
+  const level = normalizeAiDifficulty_(value);
   if (kind === 'rebuttal') {
     const map = {
       1: 'Use minimal rebuttal; focus on your own case.',
@@ -1721,6 +1726,35 @@ function aiStrengthToText_(value, kind) {
     5: 'Maximum rigor: every claim must be supported; expose logical flaws.'
   };
   return map[level];
+}
+
+function buildDebateAiDifficultyLine_(level) {
+  const n = normalizeAiDifficulty_(level);
+  const rebuttal = aiStrengthToText_(n, 'rebuttal');
+  const logic = aiStrengthToText_(n, 'logic');
+  return `AI difficulty ${n}/5: Rebuttal — ${rebuttal} Logic — ${logic}.`;
+}
+
+function isDefaultDebateSys_(sys) {
+  return _s(sys) === _s(DEBATE_DEFAULT_SYS_INSTRUCTIONS_);
+}
+
+function getDebateSpeechTypeRule_(speechId, speechType) {
+  const byId = {
+    PM: 'Constructive (PM): OREO, exactly 2 reasons with one example each.',
+    LO: 'Constructive (LO): OREO, exactly 2 reasons with one example each. Do NOT rebut PM.',
+    MG: 'Rebuttal (MG): Rebut at least 2 opposition points, then extend your case.',
+    MO: 'Rebuttal (MO): Rebut at least 2 government points, then extend opposition.',
+    OR: 'Reply (OR): Summarize only; no new arguments.',
+    GR: 'Reply (GR): Summarize only; no new arguments.'
+  };
+  if (byId[speechId]) return byId[speechId];
+  const fallback = {
+    constructive: 'Constructive: OREO with exactly 2 reasons and examples.',
+    rebuttal: 'Rebuttal: Address at least 2 opposing arguments, then extend your case.',
+    reply: 'Reply: Summarize only; no new arguments.'
+  };
+  return fallback[speechType] || '';
 }
 
 function buildDebateCefrHint_(cefr) {
@@ -1747,25 +1781,21 @@ function buildDebateSpeechPrompt_(row, speechId, side, cefr) {
   lines.push('You are competing in a parliamentary debate.');
   lines.push(`Motion: ${motion}`);
   lines.push(`You are delivering the ${step.label} speech for the ${sideLabel} side.`);
-  lines.push(`General instructions: ${_s(row && row.sys) || DEBATE_DEFAULT_SYS_INSTRUCTIONS_}`);
 
-  const extra = row && row.speechPrompts && row.speechPrompts[speechId];
-  if (extra) lines.push(`Speech-specific instructions: ${extra}`);
+  const customSys = _s(row && row.sys);
+  if (customSys && !isDefaultDebateSys_(customSys)) {
+    lines.push(`Additional instructions: ${customSys}`);
+  }
 
-  lines.push(`Rebuttal intensity: ${aiStrengthToText_(row && row.aiRebuttalStrength, 'rebuttal')}`);
-  lines.push(`Logical rigor: ${aiStrengthToText_(row && row.aiLogicTightness, 'logic')}`);
+  const extra = _s(row && row.speechPrompt) ||
+    _s(row && row.speechPrompts && row.speechPrompts[speechId]);
+  if (extra) lines.push(`Speech-specific: ${extra}`);
+
+  const aiLevel = normalizeAiDifficulty_(row && (row.aiRebuttalStrength || row.aiLogicTightness));
+  lines.push(buildDebateAiDifficultyLine_(aiLevel));
   lines.push(`Language level: ${buildDebateCefrHint_(cefr)}`);
-
-  const typeRules = {
-    constructive: speechId === 'PM'
-      ? 'Constructive (PM): OREO format. State your opinion, give exactly 2 reasons with one brief example each, restate your opinion.'
-      : 'Constructive (LO): OREO format. State your opinion, give exactly 2 reasons with one brief example each, restate your opinion. Do NOT rebut the PM in this speech.',
-    rebuttal: 'Rebuttal: Address at least 2 opposing arguments, then defend and extend your side with 1 supporting point.',
-    reply: 'Reply: Summarize the debate. NO new arguments. Explain why your side wins.'
-  };
-  lines.push(`Speech type rules: ${typeRules[step.speechType] || ''}`);
-  lines.push('You have NO preparation time. Read all prior speeches and respond immediately.');
-  lines.push('Deliver ONLY the speech text in English. No meta-commentary, labels, or stage directions.');
+  lines.push(getDebateSpeechTypeRule_(speechId, step.speechType));
+  lines.push('Deliver ONLY the speech text in English. No labels or stage directions.');
   lines.push(`Target length: approximately ${Math.round((row[step.secKey] || 120) / 60 * 150)} words.`);
 
   return lines.join('\n');
@@ -1812,8 +1842,13 @@ function generateDebateSpeech_(body) {
   const side = _s(body.side) || 'gov';
   const cefr = _s(body.cefr) || 'A2';
   const messages = Array.isArray(body.messages) ? body.messages : [];
+  const aiLevel = normalizeAiDifficulty_(body.aiDifficulty || row.aiRebuttalStrength || row.aiLogicTightness);
+  const rowForPrompt = Object.assign({}, row, {
+    aiRebuttalStrength: String(aiLevel),
+    aiLogicTightness: String(aiLevel)
+  });
 
-  const sys = buildDebateSpeechPrompt_(row, speechId, side, cefr);
+  const sys = buildDebateSpeechPrompt_(rowForPrompt, speechId, side, cefr);
   const history = debateMessagesToHistoryText_(messages, false);
   const serverMsgs = [{ role: 'system', content: sys }];
   if (history) {
@@ -1918,6 +1953,7 @@ function endAndSubmitDebate_(payload) {
     studentId4: id4,
     studentName: student,
     cefr: _s(payload.cefr),
+    aiDifficulty: normalizeAiDifficulty_(payload.aiDifficulty),
     assignments: payload.assignments || [],
     winnerSide: winnerSide,
     verdictJa: verdictJa,
@@ -1942,6 +1978,7 @@ function submitDebate_(body) {
     studentId4: _s(gIdentity.id4),
     studentName: _s(gIdentity.name),
     cefr: _s(body.cefr),
+    aiDifficulty: normalizeAiDifficulty_(body.aiDifficulty),
     assignments: body.assignments || [],
     winnerSide: _s(body.winnerSide),
     verdictJa: _s(body.verdictJa),
