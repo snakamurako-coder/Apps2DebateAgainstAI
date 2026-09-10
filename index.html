@@ -1698,17 +1698,23 @@
       console.log('[GAS診断]', line);
     }
 
-    /** GAS HtmlService 直配信時はネイティブ google.script.run を優先（fetch ループバック回避） */
-    const _nativeGasRun = (function captureNativeGasRun() {
+    /** GAS HtmlService 直配信か（googleusercontent / script.google.com） */
+    function isGasHostedPage_() {
+      const host = (location.hostname || '').toLowerCase();
+      return host.includes('googleusercontent.com') || host.includes('script.google.com');
+    }
+
+    /** 呼び出し時点のネイティブ google.script.run（初期化前だと null になり得る） */
+    function getNativeGasRun_() {
       try {
-        if (typeof google !== 'undefined' && google.script && google.script.run &&
-          typeof google.script.run.withSuccessHandler === 'function' &&
-          typeof google.script.run.withFailureHandler === 'function') {
-          return google.script.run;
+        const run = typeof google !== 'undefined' && google.script && google.script.run;
+        if (run && typeof run.withSuccessHandler === 'function' &&
+          typeof run.withFailureHandler === 'function') {
+          return run;
         }
       } catch (_) {}
       return null;
-    })();
+    }
 
     function unwrapGasRunResult_(result) {
       if (result && result.__gasError) {
@@ -1723,9 +1729,13 @@
     }
 
     function callGASViaNativeRun_(action, payload) {
+      const nativeRun = getNativeGasRun_();
+      if (!nativeRun) {
+        throw new Error('GAS直配信ですが google.script.run が使えません。ページを再読み込みしてください。');
+      }
       return new Promise((resolve, reject) => {
         const body = JSON.stringify({ action, ...payload });
-        _nativeGasRun
+        nativeRun
           .withSuccessHandler(result => {
             try { resolve(unwrapGasRunResult_(result)); }
             catch (e) { reject(e); }
@@ -1744,7 +1754,8 @@
       if (configNotSet()) { step(1, '設定未完了'); throw new Error('設定未完了: GAS_URL を設定してください'); }
       step(1, '設定OK');
 
-      if (_nativeGasRun) {
+      const nativeRun = getNativeGasRun_();
+      if (nativeRun || isGasHostedPage_()) {
         step(2, 'google.script.run 送信');
         try {
           const data = await callGASViaNativeRun_(action, payload);
@@ -1771,7 +1782,11 @@
         step(3, `fetch完了 status=${res.status} type=${res.type}`);
       } catch (e) {
         step(3, `fetch失敗: ${e.name} ${e.message}`);
-        throw new Error(`Step3失敗: ${e.name} - ${e.message}`);
+        let hint = `Step3失敗: ${e.name} - ${e.message}`;
+        if (/failed to fetch/i.test(String(e.message || ''))) {
+          hint += '（GAS_URLが古い・未pushのGitHub Pages・ネットワーク遮断の可能性。診断ログの GAS_URL を確認）';
+        }
+        throw new Error(hint);
       }
 
       let text;
@@ -1836,7 +1851,9 @@
       diagLog('=== GAS接続診断 開始 ===');
       diagLog(`origin: ${location.origin} protocol: ${location.protocol}`);
       diagLog(`GAS_URL: ${GAS_URL}`);
-      if (_nativeGasRun) diagLog('GAS直配信: google.script.run を使用（fetchは使いません）', true);
+      diagLog(`host: ${location.hostname}`);
+      if (isGasHostedPage_()) diagLog('GAS直配信: google.script.run を使用（fetchは使いません）', true);
+      else diagLog('外部ホスト: fetch POST を使用', true);
       if (location.protocol === 'file:') diagLog('⚠ file:// はCORSでブロックされます', false);
 
       try {
@@ -1853,8 +1870,8 @@
           data = await callGAS('list_books', { forceUpdate: false });
         } catch (e) {
           diagLog(`Step3: 失敗 - ${e.name}: ${e.message}`, false);
-          if (!_nativeGasRun) {
-            diagLog('※ Failed to fetch → GAS_URL・デプロイ設定・GitHub Pagesのキャッシュを確認');
+          if (!isGasHostedPage_()) {
+            diagLog('※ Failed to fetch → GAS_URL・GitHub Pages push/キャッシュ・ネットワークを確認');
           }
           return;
         }
@@ -1932,7 +1949,8 @@
       return runner;
     }
 
-    if (!_nativeGasRun) {
+    // GAS直配信ではネイティブ google.script.run を上書きしない（fetch シムは GitHub Pages 等のみ）
+    if (!getNativeGasRun_() && !isGasHostedPage_()) {
       window.google = window.google || {};
       google.script = google.script || {};
       Object.defineProperty(google.script, 'run', { get() { return createFetchGoogleScriptRun(); } });
