@@ -1698,12 +1698,64 @@
       console.log('[GAS診断]', line);
     }
 
+    /** GAS HtmlService 直配信時はネイティブ google.script.run を優先（fetch ループバック回避） */
+    const _nativeGasRun = (function captureNativeGasRun() {
+      try {
+        if (typeof google !== 'undefined' && google.script && google.script.run &&
+          typeof google.script.run.withSuccessHandler === 'function' &&
+          typeof google.script.run.withFailureHandler === 'function') {
+          return google.script.run;
+        }
+      } catch (_) {}
+      return null;
+    })();
+
+    function unwrapGasRunResult_(result) {
+      if (result && result.__gasError) {
+        const err = new Error(result.message || 'GAS error');
+        if (result.locked) {
+          err.locked = true;
+          err.lockedUntil = result.lockedUntil || '';
+        }
+        throw err;
+      }
+      return result;
+    }
+
+    function callGASViaNativeRun_(action, payload) {
+      return new Promise((resolve, reject) => {
+        const body = JSON.stringify({ action, ...payload });
+        _nativeGasRun
+          .withSuccessHandler(result => {
+            try { resolve(unwrapGasRunResult_(result)); }
+            catch (e) { reject(e); }
+          })
+          .withFailureHandler(err => {
+            reject(new Error(typeof err === 'string' ? err : (err && err.message) || String(err || 'GAS error')));
+          })
+          .callGasAction(body);
+      });
+    }
+
     async function callGAS(action, payload = {}) {
       const step = (n, msg) => { if (GAS_DEBUG) diagLog(`Step ${n}: ${msg}`); };
       step(0, `callGAS(${action}) 開始`);
 
       if (configNotSet()) { step(1, '設定未完了'); throw new Error('設定未完了: GAS_URL を設定してください'); }
       step(1, '設定OK');
+
+      if (_nativeGasRun) {
+        step(2, 'google.script.run 送信');
+        try {
+          const data = await callGASViaNativeRun_(action, payload);
+          step(3, 'google.script.run 完了');
+          step(7, '成功');
+          return data;
+        } catch (e) {
+          step(3, `google.script.run 失敗: ${e.name} ${e.message}`);
+          throw e;
+        }
+      }
 
       const data = { action, ...payload };
       const body = 'd=' + encodeURIComponent(JSON.stringify(data));
@@ -1784,6 +1836,7 @@
       diagLog('=== GAS接続診断 開始 ===');
       diagLog(`origin: ${location.origin} protocol: ${location.protocol}`);
       diagLog(`GAS_URL: ${GAS_URL}`);
+      if (_nativeGasRun) diagLog('GAS直配信: google.script.run を使用（fetchは使いません）', true);
       if (location.protocol === 'file:') diagLog('⚠ file:// はCORSでブロックされます', false);
 
       try {
@@ -1791,50 +1844,32 @@
         if (configNotSet()) throw new Error('GAS_URL未設定');
         diagLog('Step1: OK', true);
 
-        diagLog('Step2: リクエストbody構築');
-        const data = { action: 'list_books', forceUpdate: false };
-        const body = 'd=' + encodeURIComponent(JSON.stringify(data));
+        diagLog('Step2: list_books リクエスト構築');
         diagLog('Step2: OK', true);
 
-        diagLog('Step3: fetch() 送信');
-        let res;
+        diagLog('Step3: バックエンド呼び出し');
+        let data;
         try {
-          res = await fetch(GAS_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body
-          });
+          data = await callGAS('list_books', { forceUpdate: false });
         } catch (e) {
           diagLog(`Step3: 失敗 - ${e.name}: ${e.message}`, false);
-          diagLog('※ Failed to fetch → CORS/ネットワーク/URL確認');
+          if (!_nativeGasRun) {
+            diagLog('※ Failed to fetch → GAS_URL・デプロイ設定・GitHub Pagesのキャッシュを確認');
+          }
           return;
         }
-        diagLog(`Step3: OK status=${res.status} type=${res.type}`, true);
+        diagLog('Step3: OK', true);
 
-        diagLog('Step4: res.text() 取得');
-        const text = await res.text();
-        diagLog(`Step4: OK len=${text.length} 先頭="${text.trim().slice(0, 60)}..."`, true);
+        diagLog('Step4: 応答データ確認');
+        diagLog(`Step4: OK books=${data && data.books ? data.books.length : '(構造確認)'}`, true);
 
-        diagLog('Step5: JSON形式チェック');
-        const trim = text.trim();
-        if (!trim.startsWith('{') && !trim.startsWith('[')) {
-          diagLog(`Step5: 失敗 - HTML等を返却`, false);
-          diagLog(`先頭80文字: ${trim.slice(0, 80)}`);
+        diagLog('Step5: 業務レスポンス確認');
+        if (!data || !Array.isArray(data.books)) {
+          diagLog('Step5: 失敗 - books 配列がありません', false);
           return;
         }
         diagLog('Step5: OK', true);
-
-        diagLog('Step6: JSON.parse');
-        const json = JSON.parse(text);
-        diagLog(`Step6: OK status=${json.status}`, true);
-
-        diagLog('Step7: 業務レスポンス確認');
-        if (json.status === 'error') {
-          diagLog(`Step7: GAS側エラー - ${json.message}`, false);
-          return;
-        }
-        diagLog('Step7: 全成功', true);
-        diagLog(`取得件数: ${Array.isArray(json.data) ? json.data.length : (json.data && json.data.books ? json.data.books.length : '(構造確認)')}件`);
+        diagLog(`Step6: 全成功 (${data.books.length} ブック)`);
       } catch (e) {
         diagLog(`例外: ${e.message}`, false);
         if (e.stack) diagLog(e.stack);
@@ -1876,18 +1911,6 @@
           throw new Error('Unknown action: ' + fnName);
       }
     }
-
-    /** GAS HtmlService 直配信時はネイティブ google.script.run を優先（fetch ループバック回避） */
-    const _nativeGasRun = (function captureNativeGasRun() {
-      try {
-        if (typeof google !== 'undefined' && google.script && google.script.run &&
-          typeof google.script.run.withSuccessHandler === 'function' &&
-          typeof google.script.run.withFailureHandler === 'function') {
-          return google.script.run;
-        }
-      } catch (_) {}
-      return null;
-    })();
 
     function createFetchGoogleScriptRun() {
       const state = { success: null, failure: null };

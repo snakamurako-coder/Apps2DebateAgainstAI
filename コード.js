@@ -136,6 +136,34 @@ function jsonResponse_(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/** HtmlService から google.script.run 経由で doPost と同じ action を実行する */
+function callGasAction(bodyJson) {
+  try {
+    const body = typeof bodyJson === 'string' ? JSON.parse(bodyJson || '{}') : (bodyJson || {});
+    const result = dispatchAction_(body);
+    if (result && result.status === 'error') {
+      return {
+        __gasError: true,
+        message: result.message || 'GAS error',
+        locked: !!result.locked,
+        lockedUntil: result.lockedUntil || ''
+      };
+    }
+    if (result && result.status === 'success' && result.data !== undefined) return result.data;
+    return result;
+  } catch (err) {
+    if (err && err.locked) {
+      return {
+        __gasError: true,
+        message: String(err.message || err),
+        locked: true,
+        lockedUntil: err.lockedUntil || ''
+      };
+    }
+    throw err;
+  }
+}
+
 /** bootstrap（Drive/SS 参照）が必要な action のみ実行して起動を軽くする */
 const BOOTSTRAP_ACTIONS_ = {
   auth_verify_initial: true,
