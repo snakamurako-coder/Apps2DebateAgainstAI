@@ -383,6 +383,18 @@
       padding: 0.25rem 0.4rem;
     }
 
+    .assign-table input.assign-sec {
+      width: 4.5rem;
+      text-align: right;
+    }
+
+    .assign-sec-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      white-space: nowrap;
+    }
+
     .debate-ai-side-row {
       display: flex;
       flex-wrap: wrap;
@@ -1341,10 +1353,11 @@
           <span class="small" id="debateAiSideHint">人間は反対側を担当（表で個別調整可）</span>
         </div>
         <button type="button" id="btnFillMyName" class="btn-secondary" style="width:auto;margin-bottom:.5rem;">ログイン名を人間側に一括設定</button>
+        <div class="small" style="margin-bottom:.5rem;">※ 制限時間（秒）は開始前に変更できます（セットの既定値で初期化・進行中はロック）</div>
         <div style="overflow-x:auto;">
           <table class="assign-table" id="assignTable">
             <thead>
-              <tr><th>順</th><th>スピーカーの役割</th><th>英語名</th><th>時間</th><th>担当</th><th>氏名</th><th>やること</th></tr>
+              <tr><th>順</th><th>スピーカーの役割</th><th>英語名</th><th>制限時間（秒）</th><th>担当</th><th>氏名</th><th>やること</th></tr>
             </thead>
             <tbody id="assignTableBody"></tbody>
           </table>
@@ -3232,12 +3245,42 @@
     /* ========= ディベートモード ========= */
     function getDebateFlowStep(idx) { return DEBATE_FLOW[idx] || null; }
 
+    function getDebateStepSec(step) {
+      if (!step || !step.secKey) return 120;
+      const n = debateRow ? Number(debateRow[step.secKey]) : NaN;
+      if (!isNaN(n) && n > 0) return Math.round(n);
+      return step.type === 'prep' ? 60 : 120;
+    }
+
+    function normalizeDebateSecInput(value, fallback) {
+      const n = parseInt(String(value == null ? '' : value), 10);
+      if (isNaN(n)) return fallback;
+      return Math.max(15, Math.min(900, n));
+    }
+
+    function applyDebateSecsFromTable() {
+      if (!debateRow) return;
+      document.querySelectorAll('#assignTableBody .assign-sec').forEach(inp => {
+        const key = inp.dataset.secKey;
+        if (!key) return;
+        const fallback = Number(debateRow[key]) || (key.indexOf('prep') === 0 ? 60 : 120);
+        debateRow[key] = normalizeDebateSecInput(inp.value, fallback);
+        inp.value = String(debateRow[key]);
+      });
+    }
+
     function formatDebateStepDuration(step) {
       if (!step) return '—';
-      const sec = debateRow ? (Number(debateRow[step.secKey]) || 120) : 120;
+      const sec = getDebateStepSec(step);
       if (sec >= 60 && sec % 60 === 0) return `${sec / 60}分`;
       if (sec >= 60) return `${Math.floor(sec / 60)}分${sec % 60}秒`;
       return `${sec}秒`;
+    }
+
+    function buildAssignSecCellHtml(step) {
+      const sec = getDebateStepSec(step);
+      const locked = debateSelectorsFrozen || (debatePhase !== 'setup' && debatePhase !== 'done');
+      return `<span class="assign-sec-wrap"><input type="number" class="assign-sec" data-sec-key="${step.secKey}" min="15" max="900" step="15" value="${sec}" ${locked ? 'disabled' : ''} title="制限時間（秒）"><span class="small">秒</span></span>`;
     }
 
     function getDebateAiSide() {
@@ -3305,7 +3348,7 @@
             <td>${++order}</td>
             <td>${step.roleJa || step.label}</td>
             <td>${step.enLabel || step.label}</td>
-            <td>${formatDebateStepDuration(step)}</td>
+            <td>${buildAssignSecCellHtml(step)}</td>
             <td colspan="2" class="small" style="text-align:center;">—</td>
             <td class="assign-task">${step.taskJa || ''}</td>`;
           tbody.appendChild(tr);
@@ -3318,7 +3361,7 @@
           <td>${++order}</td>
           <td class="${step.side === 'gov' ? 'side-gov' : 'side-opp'}">${step.roleJa || step.sideJa}</td>
           <td>${step.id} (${step.label})</td>
-          <td>${formatDebateStepDuration(step)}</td>
+          <td>${buildAssignSecCellHtml(step)}</td>
           <td><select class="assign-type" ${debateSelectorsFrozen ? 'disabled' : ''}>
             <option value="human" ${a.assigneeType === 'human' ? 'selected' : ''}>人間</option>
             <option value="ai" ${a.assigneeType === 'ai' ? 'selected' : ''}>AI</option>
@@ -3326,6 +3369,9 @@
           <td><input type="text" class="assign-name" value="${(a.speakerName || '').replace(/"/g, '&quot;')}" placeholder="氏名" ${debateSelectorsFrozen ? 'disabled' : ''}></td>
           <td class="assign-task">${step.taskJa || ''}</td>`;
         tbody.appendChild(tr);
+      });
+      tbody.querySelectorAll('.assign-sec').forEach(inp => {
+        inp.addEventListener('change', () => applyDebateSecsFromTable());
       });
       highlightAssignmentTableRow();
     }
@@ -3625,7 +3671,7 @@
         const who = assign.assigneeType === 'human' ? `人間 · ${assign.speakerName || '—'}` : 'AI';
         el('debateCurrentAssignee').textContent = `担当: ${who}`;
       } else el('debateCurrentAssignee').textContent = '—';
-      const sec = debateRow ? (debateRow[step.secKey] || 120) : 120;
+      const sec = getDebateStepSec(step);
       if (debatePhase === 'running' || debatePhase === 'prep') startDebateTimer(sec);
     }
 
@@ -3696,6 +3742,7 @@
 
     async function startDebateFlow() {
       if (busy || !isLoggedIn() || !debateBook || !debateUnit || !debateRow) return;
+      applyDebateSecsFromTable();
       debateAssignments = readAssignmentsFromTable();
       debateMessages = [];
       debateVerdict = null;
@@ -3704,7 +3751,8 @@
       debateStepIndex = 0;
       debateSelectorsFrozen = true;
       renderAssignmentTable();
-      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI難易度: ${getDebateAiDifficulty()}/5\nAI語数: ${debateAiWordTargetLabel(getDebateAiWordTarget())}\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
+      const timeSummary = DEBATE_FLOW.map(s => `${s.id || s.label}:${getDebateStepSec(s)}秒`).join(' / ');
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI難易度: ${getDebateAiDifficulty()}/5\nAI語数: ${debateAiWordTargetLabel(getDebateAiWordTarget())}\n制限時間: ${timeSummary}\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
       debatePhase = 'running';
       updateDebateUI();
       await advanceDebateStep();
@@ -3738,7 +3786,7 @@
           return advanceDebateStep();
         }
         debatePhase = 'prep';
-        addDebateSystemMsg(`⏳ ${step.label}（人間チーム向け・${debateRow[step.secKey] || 60}秒）`);
+        addDebateSystemMsg(`⏳ ${step.label}（人間チーム向け・${getDebateStepSec(step)}秒）`);
         updateDebateUI();
         return;
       }
