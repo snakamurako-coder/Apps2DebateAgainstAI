@@ -1785,6 +1785,30 @@ function getDebateSpeechTypeRule_(speechId, speechType) {
   return fallback[speechType] || '';
 }
 
+function normalizeDebateWordTarget_(value) {
+  const s = _s(value).toLowerCase();
+  if (s === '100' || s === '200' || s === '300') return s;
+  return 'unlimited';
+}
+
+function buildDebateTargetLengthLine_(wordTarget, row, speechId) {
+  const t = normalizeDebateWordTarget_(wordTarget);
+  if (t !== 'unlimited') {
+    return `Target length: approximately ${t} words. Aim for about ${t} words; do not substantially exceed this.`;
+  }
+  const step = getDebateFlowStep_(speechId);
+  const sec = step && step.secKey ? (row && row[step.secKey]) || 120 : 120;
+  return `Target length: approximately ${Math.round(sec / 60 * 150)} words (no hard word limit).`;
+}
+
+function debateMaxTokensForWordTarget_(wordTarget, sec) {
+  const t = normalizeDebateWordTarget_(wordTarget);
+  if (t === '100') return 220;
+  if (t === '200') return 400;
+  if (t === '300') return 560;
+  return Math.min(800, Math.max(350, Math.round(sec / 60 * 140)));
+}
+
 function buildDebateCefrHint_(cefr) {
   const level = _s(cefr) || 'A2';
   if (level === 'No Limit') {
@@ -1799,7 +1823,7 @@ function buildDebateCefrHint_(cefr) {
   return map[level] || `Use English appropriate for CEFR ${level} learners following this debate.`;
 }
 
-function buildDebateSpeechPrompt_(row, speechId, side, cefr) {
+function buildDebateSpeechPrompt_(row, speechId, side, cefr, wordTarget) {
   const step = getDebateFlowStep_(speechId);
   if (!step || step.type === 'prep') throw new Error('Invalid speech: ' + speechId);
 
@@ -1824,7 +1848,7 @@ function buildDebateSpeechPrompt_(row, speechId, side, cefr) {
   lines.push(`Language level: ${buildDebateCefrHint_(cefr)}`);
   lines.push(getDebateSpeechTypeRule_(speechId, step.speechType));
   lines.push('Deliver ONLY the speech text in English. No labels or stage directions.');
-  lines.push(`Target length: approximately ${Math.round((row[step.secKey] || 120) / 60 * 150)} words.`);
+  lines.push(buildDebateTargetLengthLine_(wordTarget, row, speechId));
 
   return lines.join('\n');
 }
@@ -1869,6 +1893,7 @@ function generateDebateSpeech_(body) {
   const speechId = _s(body.speechId);
   const side = _s(body.side) || 'gov';
   const cefr = _s(body.cefr) || 'A2';
+  const wordTarget = normalizeDebateWordTarget_(body.wordTarget);
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const aiLevel = normalizeAiDifficulty_(body.aiDifficulty || row.aiRebuttalStrength || row.aiLogicTightness);
   const rowForPrompt = Object.assign({}, row, {
@@ -1876,20 +1901,23 @@ function generateDebateSpeech_(body) {
     aiLogicTightness: String(aiLevel)
   });
 
-  const sys = buildDebateSpeechPrompt_(rowForPrompt, speechId, side, cefr);
+  const sys = buildDebateSpeechPrompt_(rowForPrompt, speechId, side, cefr, wordTarget);
   const history = debateMessagesToHistoryText_(messages, false);
   const serverMsgs = [{ role: 'system', content: sys }];
   if (history) {
     serverMsgs.push({ role: 'user', content: 'Previous speeches in this debate:\n\n' + history.slice(-12000) });
   }
+  const lengthHint = wordTarget === 'unlimited'
+    ? ''
+    : ` Keep the speech to about ${wordTarget} words.`;
   serverMsgs.push({
     role: 'user',
-    content: `Now deliver your ${speechId} speech for the ${DEBATE_SIDE_LABEL[side]} side immediately, with no preparation time, using all prior speeches above.`
+    content: `Now deliver your ${speechId} speech for the ${DEBATE_SIDE_LABEL[side]} side immediately, with no preparation time, using all prior speeches above.${lengthHint}`
   });
 
   const secKey = (getDebateFlowStep_(speechId) || {}).secKey;
   const sec = secKey ? (row[secKey] || 120) : 120;
-  const maxTokens = Math.min(800, Math.max(350, Math.round(sec / 60 * 140)));
+  const maxTokens = debateMaxTokensForWordTarget_(wordTarget, sec);
 
   try {
     return chat_(serverMsgs, { keepAll: true, maxTokens: maxTokens }) || '';

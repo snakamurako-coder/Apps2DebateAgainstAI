@@ -348,6 +348,11 @@
       color: var(--text-color-muted);
     }
 
+    .debate-word-count {
+      font-weight: 500;
+      opacity: 0.85;
+    }
+
     .msg.debate-gov .debate-meta-label { color: var(--gov-color); }
     .msg.debate-opp .debate-meta-label { color: var(--opp-color); }
 
@@ -1298,6 +1303,16 @@
           </select>
           <div class="small" style="margin-top:.35rem;">※ 反論の強さ・論理の厳密度（システムプロンプトに反映）</div>
         </div>
+      </div>
+      <div>
+        <label for="debateAiWordTarget">AI発言の語数</label>
+        <select id="debateAiWordTarget">
+          <option value="100">100語程度</option>
+          <option value="200" selected>200語程度</option>
+          <option value="300">300語程度</option>
+          <option value="unlimited">無制限</option>
+        </select>
+        <div class="small" style="margin-top:.35rem;">※ AIスピーチのアウトプット量（システムプロンプト・生成上限に反映）</div>
       </div>
       <div>
         <label for="debateSetSelect">ディベートセット</label>
@@ -3141,6 +3156,31 @@
       sel.value = String(normalizeDebateAiDifficulty(row.aiRebuttalStrength || row.aiLogicTightness || 3));
     }
 
+    function normalizeDebateAiWordTarget(value) {
+      const s = String(value == null ? '' : value).trim().toLowerCase();
+      if (s === '100' || s === '200' || s === '300') return s;
+      return 'unlimited';
+    }
+
+    function getDebateAiWordTarget() {
+      const sel = el('debateAiWordTarget');
+      return normalizeDebateAiWordTarget(sel ? sel.value : '200');
+    }
+
+    function debateAiWordTargetLabel(value) {
+      const t = normalizeDebateAiWordTarget(value);
+      if (t === '100') return '100語程度';
+      if (t === '200') return '200語程度';
+      if (t === '300') return '300語程度';
+      return '無制限';
+    }
+
+    function countDebateWords(text) {
+      const t = String(text || '').trim();
+      if (!t) return 0;
+      return t.split(/\s+/).filter(Boolean).length;
+    }
+
     function slimDebateRowForApi(row, speechId, aiDifficulty) {
       if (!row) return {};
       const level = String(normalizeDebateAiDifficulty(aiDifficulty != null ? aiDifficulty : row.aiRebuttalStrength));
@@ -3482,7 +3522,15 @@
       if (meta.assigneeType === 'ai') div.classList.add('hide-text');
       const label = document.createElement('span');
       label.className = 'debate-meta-label';
-      label.textContent = debateUiLabel(meta);
+      if (meta.assigneeType === 'ai') {
+        label.appendChild(document.createTextNode(debateUiLabel(meta)));
+        const wc = document.createElement('span');
+        wc.className = 'debate-word-count';
+        wc.textContent = ` · ${countDebateWords(content)}語`;
+        label.appendChild(wc);
+      } else {
+        label.textContent = debateUiLabel(meta);
+      }
       const body = document.createElement('span');
       body.className = 'msg-body';
       body.textContent = content;
@@ -3611,6 +3659,8 @@
       if (debateCefrEl) debateCefrEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
       const debateAiDiffEl = el('debateAiDifficulty');
       if (debateAiDiffEl) debateAiDiffEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
+      const debateWordEl = el('debateAiWordTarget');
+      if (debateWordEl) debateWordEl.disabled = busy || debateSelectorsFrozen || running || authLocked;
       const aiSideSw = el('debateAiSideSwitch');
       if (aiSideSw) aiSideSw.disabled = busy || debateSelectorsFrozen || running || authLocked;
       el('btnFillMyName').disabled = busy || debateSelectorsFrozen || running || authLocked;
@@ -3639,7 +3689,7 @@
       debateStepIndex = 0;
       debateSelectorsFrozen = true;
       renderAssignmentTable();
-      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI難易度: ${getDebateAiDifficulty()}/5\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
+      addDebateSystemMsg(`Motion: ${debateRow.motion}\nCEFR: ${getDebateCefr()}\nAI難易度: ${getDebateAiDifficulty()}/5\nAI語数: ${debateAiWordTargetLabel(getDebateAiWordTarget())}\nAI: ${getDebateAiSide() === 'gov' ? '肯定派' : '否定派'} · 人間: ${getDebateAiSide() === 'gov' ? '否定派' : '肯定派'}\nディベートを開始します。`);
       debatePhase = 'running';
       updateDebateUI();
       await advanceDebateStep();
@@ -3692,6 +3742,7 @@
             side: step.side,
             cefr: getDebateCefr(),
             aiDifficulty: getDebateAiDifficulty(),
+            wordTarget: getDebateAiWordTarget(),
             messages: slimDebateMessagesForApi(debateMessages)
           });
           const meta = {
