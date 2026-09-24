@@ -1686,7 +1686,7 @@
     })();
 
     // GAS REST 呼び出し設定（APP_CONFIG で上書き可能、未設定時は以下を使用）
-    let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbyPhA2Zcd6z_qUgEJhun0HFNY9WVRvFbCG3rpNXykUqjO58XCdza88VanX3hIJBFF6-/exec';
+    let GAS_URL = (window.APP_CONFIG && window.APP_CONFIG.GAS_URL) || 'https://script.google.com/macros/s/AKfycbwM1C_kAKTeD9kBlPB3j0j2pNwpXUcuIrQ5LYt0lTy-zE7ePC75qm6xBou1luQOM2ou5A/exec';
 
     const AUTH_LOCK_KEY = 'auth_locked_until';
     const AUTH_FAIL_KEY = 'auth_fail_count';
@@ -1719,11 +1719,14 @@
       return host.includes('googleusercontent.com') || host.includes('script.google.com');
     }
 
-    /** 呼び出し時点のネイティブ google.script.run（初期化前だと null になり得る） */
+    /** 呼び出し時点のネイティブ google.script.run（fetch シムは除外） */
     function getNativeGasRun_() {
       try {
         const run = typeof google !== 'undefined' && google.script && google.script.run;
-        if (run && typeof run.withSuccessHandler === 'function' &&
+        if (!run) return null;
+        // 外部ホスト向け fetch シムはネイティブ扱いにしない
+        if (run._isFetchShim) return null;
+        if (typeof run.withSuccessHandler === 'function' &&
           typeof run.withFailureHandler === 'function') {
           return run;
         }
@@ -1748,41 +1751,28 @@
       if (!nativeRun) {
         throw new Error('GAS直配信ですが google.script.run が使えません。ページを再読み込みしてください。');
       }
+      if (typeof nativeRun.callGasAction !== 'function') {
+        throw new Error('callGasAction がデプロイにありません。新しいデプロイURLで開き直してください。');
+      }
       return new Promise((resolve, reject) => {
         const body = JSON.stringify({ action, ...payload });
-        nativeRun
-          .withSuccessHandler(result => {
-            try { resolve(unwrapGasRunResult_(result)); }
-            catch (e) { reject(e); }
-          })
-          .withFailureHandler(err => {
-            reject(new Error(typeof err === 'string' ? err : (err && err.message) || String(err || 'GAS error')));
-          })
-          .callGasAction(body);
+        try {
+          nativeRun
+            .withSuccessHandler(result => {
+              try { resolve(unwrapGasRunResult_(result)); }
+              catch (e) { reject(e); }
+            })
+            .withFailureHandler(err => {
+              reject(new Error(typeof err === 'string' ? err : (err && err.message) || String(err || 'GAS error')));
+            })
+            .callGasAction(body);
+        } catch (e) {
+          reject(new Error(e && e.message ? e.message : String(e)));
+        }
       });
     }
 
-    async function callGAS(action, payload = {}) {
-      const step = (n, msg) => { if (GAS_DEBUG) diagLog(`Step ${n}: ${msg}`); };
-      step(0, `callGAS(${action}) 開始`);
-
-      if (configNotSet()) { step(1, '設定未完了'); throw new Error('設定未完了: GAS_URL を設定してください'); }
-      step(1, '設定OK');
-
-      const nativeRun = getNativeGasRun_();
-      if (nativeRun || isGasHostedPage_()) {
-        step(2, 'google.script.run 送信');
-        try {
-          const data = await callGASViaNativeRun_(action, payload);
-          step(3, 'google.script.run 完了');
-          step(7, '成功');
-          return data;
-        } catch (e) {
-          step(3, `google.script.run 失敗: ${e.name} ${e.message}`);
-          throw e;
-        }
-      }
-
+    async function callGASViaFetch_(action, payload, step) {
       const data = { action, ...payload };
       const body = 'd=' + encodeURIComponent(JSON.stringify(data));
       step(2, `fetch送信開始 (${GAS_URL.slice(0, 50)}...)`);
@@ -1849,6 +1839,30 @@
       step(7, '成功');
       if (json.status === 'success' && json.data !== undefined) return json.data;
       return json;
+    }
+
+    async function callGAS(action, payload = {}) {
+      const step = (n, msg) => { if (GAS_DEBUG) diagLog(`Step ${n}: ${msg}`); };
+      step(0, `callGAS(${action}) 開始`);
+
+      if (configNotSet()) { step(1, '設定未完了'); throw new Error('設定未完了: GAS_URL を設定してください'); }
+      step(1, '設定OK');
+
+      // GAS直配信のみ google.script.run。外部ホスト（GitHub Pages等）は必ず fetch
+      if (isGasHostedPage_() && getNativeGasRun_()) {
+        step(2, 'google.script.run 送信');
+        try {
+          const data = await callGASViaNativeRun_(action, payload);
+          step(3, 'google.script.run 完了');
+          step(7, '成功');
+          return data;
+        } catch (e) {
+          step(3, `google.script.run 失敗: ${e.name} ${e.message}`);
+          throw e;
+        }
+      }
+
+      return callGASViaFetch_(action, payload, step);
     }
 
     async function runGASDiagnostic() {
@@ -1947,6 +1961,7 @@
     function createFetchGoogleScriptRun() {
       const state = { success: null, failure: null };
       const runner = {
+        _isFetchShim: true,
         withSuccessHandler(fn) { state.success = fn; return runner; },
         withFailureHandler(fn) { state.failure = fn; return runner; }
       };
@@ -1965,7 +1980,7 @@
     }
 
     // GAS直配信ではネイティブ google.script.run を上書きしない（fetch シムは GitHub Pages 等のみ）
-    if (!getNativeGasRun_() && !isGasHostedPage_()) {
+    if (!isGasHostedPage_()) {
       window.google = window.google || {};
       google.script = google.script || {};
       Object.defineProperty(google.script, 'run', { get() { return createFetchGoogleScriptRun(); } });
